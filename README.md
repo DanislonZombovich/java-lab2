@@ -174,7 +174,7 @@ classDiagram
 
 ### Диаграмма последовательности
 
-Сценарий выполнения запроса `SELECT brand, price FROM cars WHERE brand = "Toyota";`:
+Сценарий выполнения запроса `SELECT brand, price FROM cars WHERE brand = 'Toyota'`:
 
 ```mermaid
 sequenceDiagram
@@ -187,22 +187,22 @@ sequenceDiagram
     participant Index as BTreeIndex
     participant Plan as IndexScanPlan
 
-    User->>Engine: execute("SELECT brand, price FROM cars WHERE brand = 'Toyota';")
+    User->>Engine: execute(SELECT brand, price FROM cars WHERE brand = 'Toyota')
     Engine->>Parser: parse()
-    Parser-->>Engine: SelectStatement(table="cars", condition="brand = 'Toyota'")
-    Engine->>Repo: getTable("cars")
+    Parser-->>Engine: SelectStatement(cars, brand = 'Toyota')
+    Engine->>Repo: getTable(cars)
     Repo-->>Engine: FileTableRepository
-    Engine->>TableRepo: getIndexForColumn("brand")
-    TableRepo-->>Engine: BTreeIndex("idx_cars_brand")
-    Engine->>Engine: buildOptimizedPlan() -> IndexScanPlan
+    Engine->>TableRepo: getIndexForColumn(brand)
+    TableRepo-->>Engine: BTreeIndex(idx_cars_brand)
+    Engine->>Engine: buildOptimizedPlan (choose IndexScanPlan)
     Engine->>Plan: execute()
-    Plan->>Index: search("Toyota")
-    Index-->>Plan: [primary_key: 1]
+    Plan->>Index: search('Toyota')
+    Index-->>Plan: primary_key 1
     Plan->>TableRepo: findByPrimaryKey(1)
-    TableRepo-->>Plan: Row(id=1, brand="Toyota", price=25000.0)
-    Plan-->>Engine: List~Row~ (1 запись)
-    Engine->>Engine: проекция столбцов [brand, price]
-    Engine-->>User: QueryResult (табличный вывод + время выполнения + план)
+    TableRepo-->>Plan: Row(1, 'Toyota', 25000.0)
+    Plan-->>Engine: List of Rows (1 row)
+    Engine->>Engine: projection (brand, price)
+    Engine-->>User: QueryResult (table, elapsed time, plan)
 ```
 
 ---
