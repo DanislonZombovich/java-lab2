@@ -387,24 +387,190 @@ DROP TABLE manufacturers;
 
 ---
 
-## Распределение обязанностей в команде
+## Распределение обязанностей в команде и инструкция по коммитам
 
-Работа выполнена студенческой командой:
+Работа над проектом распределена между тремя участниками:
+1. **Егоров Даниил** — Team Lead / Архитектор ядра хранилища и репозиториев (Storage & Data Access).
+2. **Егор Глазов** — Инженер языкового процессора и пользовательских интерфейсов (Parser, Query Execution & UI).
+3. **Максим Жулин** — Инженер алгоритмов индексирования, оптимизации и тестирования (B-Tree, Optimizer & QA).
 
-- **Данис Егоров (Ведущий разработчик / Team Lead)**:
-  - Проектирование общей архитектуры ядра СУБД.
-  - Разработка подсистемы физического хранения данных (`StorageEngine`, `FileStorageEngine`), сериализации в JSON и журнала транзакций (WAL).
-  - Реализация слоя доступа к данным (`TableRepository`, `DatabaseRepository`) и валидация первичных и внешних ключей.
+---
 
-- **Участник 2 (Инженер по языковым процессорам и UI)**:
-  - Разработка лексического анализатора (`SqlLexer`) и синтаксического парсера (`SqlParser`).
-  - Реализация движка обработки запросов (`QueryEngine`) и форматирования табличного вывода (`TablePrinter`).
-  - Создание графического интерфейса (`DatabaseGui`) на Swing.
+### 1. Егоров Даниил (Team Lead, Storage & Data Access)
 
-- **Участник 3 (Инженер по структурам данных и тестированию)**:
-  - Реализация сбалансированного B-Tree дерева (`BTreeIndex`) и логики диапазонного сканирования.
-  - Интеграция индексного сканирования с оптимизатором запросов (`IndexScanPlan`).
-  - Разработка модуля бенчмаркинга (`BenchmarkRunner`), проведение нагрузочных испытаний и написание модульных тестов.
+**Зона ответственности:**
+- Проектирование общей архитектуры СУБД, выбор паттернов проектирования (DAO, Repository, Iterator, Strategy).
+- Создание доменных моделей базы данных (`DataType`, `Column`, `ForeignKey`, `TableSchema`, `Row`).
+- Реализация подсистемы физического хранения на диске (`FileStorageEngine`) с поддержкой JSON-сериализации.
+- Обеспечение отказоустойчивости и надежности: атомарная запись файлов (`ATOMIC_MOVE`) во избежание повреждения файлов при сбоях и реализация журнала транзакций упреждающей записи (**Write-Ahead Log / WAL**).
+- Реализация слоя доступа к данным (`TableRepository`, `FileTableRepository`, `DatabaseRepository`), валидация уникальности `PRIMARY KEY` и проверка ограничений ссылочной целостности `FOREIGN KEY` при вставке, обновлении, удалении строк и удалении таблиц.
+
+**Закрепленные файлы:**
+- `src/main/java/ru/danis/dbms/model/DataType.java`
+- `src/main/java/ru/danis/dbms/model/Column.java`
+- `src/main/java/ru/danis/dbms/model/ForeignKey.java`
+- `src/main/java/ru/danis/dbms/model/TableSchema.java`
+- `src/main/java/ru/danis/dbms/model/Row.java`
+- `src/main/java/ru/danis/dbms/storage/StorageEngine.java`
+- `src/main/java/ru/danis/dbms/storage/FileStorageEngine.java`
+- `src/main/java/ru/danis/dbms/storage/WalEntry.java`
+- `src/main/java/ru/danis/dbms/storage/RowIterator.java`
+- `src/main/java/ru/danis/dbms/repository/TableRepository.java`
+- `src/main/java/ru/danis/dbms/repository/FileTableRepository.java`
+- `src/main/java/ru/danis/dbms/repository/DatabaseRepository.java`
+
+**Детальный сценарий коммитов (Егоров Даниил):**
+
+```bash
+# Коммит 1.1: Определение базовых доменных моделей и схемы таблиц
+git add src/main/java/ru/danis/dbms/model/DataType.java \
+        src/main/java/ru/danis/dbms/model/Column.java \
+        src/main/java/ru/danis/dbms/model/ForeignKey.java \
+        src/main/java/ru/danis/dbms/model/TableSchema.java \
+        src/main/java/ru/danis/dbms/model/Row.java
+git commit -m "feat(model): implement relational domain entities, datatypes, and foreign keys"
+
+# Коммит 1.2: Подсистема дискового хранения, атомарность и журнал WAL
+git add src/main/java/ru/danis/dbms/storage/StorageEngine.java \
+        src/main/java/ru/danis/dbms/storage/FileStorageEngine.java \
+        src/main/java/ru/danis/dbms/storage/WalEntry.java \
+        src/main/java/ru/danis/dbms/storage/RowIterator.java
+git commit -m "feat(storage): implement FileStorageEngine with atomic write, JSON persistence, and WAL"
+
+# Коммит 1.3: Слой репозиториев, валидация первичных и внешних ключей
+git add src/main/java/ru/danis/dbms/repository/TableRepository.java \
+        src/main/java/ru/danis/dbms/repository/FileTableRepository.java \
+        src/main/java/ru/danis/dbms/repository/DatabaseRepository.java
+git commit -m "feat(repository): implement table repositories with primary and foreign key integrity checks"
+```
+
+---
+
+### 2. Егор Глазов (Parser, Query Execution & UI)
+
+**Зона ответственности:**
+- Разработка лексического анализатора SQL-запросов (`SqlLexer`), выделение ключевых слов, идентификаторов, операторов и литералов.
+- Синтаксический разбор языка запросов методом рекурсивного спуска (`SqlParser`): поддержка команд `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX`, `INSERT INTO`, `SELECT`, `UPDATE`, `DELETE`, `EXPLAIN`, `SHOW TABLES`, `DESCRIBE`.
+- Обработка и маршрутизация запросов в `QueryEngine`, трансляция AST в вызовы соответствующих репозиториев и построение `QueryResult`.
+- Разработка форматированного вывода результатов в виде красивых ASCII-таблиц (`TablePrinter`).
+- Разработка интерактивной консоли управления (CLI REPL, класс `ConsoleApp`) и точки входа `Main`.
+- Разработка полноценного графического интерфейса пользователя на Swing (`DatabaseGui`).
+
+**Закрепленные файлы:**
+- `src/main/java/ru/danis/dbms/parser/TokenType.java`
+- `src/main/java/ru/danis/dbms/parser/Token.java`
+- `src/main/java/ru/danis/dbms/parser/SqlLexer.java`
+- `src/main/java/ru/danis/dbms/parser/Statement.java` (и все производные AST-узлы операторов)
+- `src/main/java/ru/danis/dbms/parser/Condition.java`
+- `src/main/java/ru/danis/dbms/parser/SqlParser.java`
+- `src/main/java/ru/danis/dbms/model/QueryResult.java`
+- `src/main/java/ru/danis/dbms/engine/QueryEngine.java`
+- `src/main/java/ru/danis/dbms/cli/TablePrinter.java`
+- `src/main/java/ru/danis/dbms/cli/ConsoleApp.java`
+- `src/main/java/ru/danis/dbms/gui/DatabaseGui.java`
+- `src/main/java/ru/danis/dbms/Main.java`
+
+**Детальный сценарий коммитов (Егор Глазов):**
+
+```bash
+# Коммит 2.1: Лексический анализатор SQL и AST-структура запросов
+git add src/main/java/ru/danis/dbms/parser/TokenType.java \
+        src/main/java/ru/danis/dbms/parser/Token.java \
+        src/main/java/ru/danis/dbms/parser/SqlLexer.java \
+        src/main/java/ru/danis/dbms/parser/Statement.java \
+        src/main/java/ru/danis/dbms/parser/Condition.java
+git commit -m "feat(parser): implement SqlLexer and AST statement node definitions"
+
+# Коммит 2.2: Синтаксический парсер SQL-запросов (DDL, DML, DQL)
+git add src/main/java/ru/danis/dbms/parser/SqlParser.java \
+        src/main/java/ru/danis/dbms/model/QueryResult.java
+git commit -m "feat(parser): implement recursive descent SqlParser for SELECT, INSERT, UPDATE, DELETE"
+
+# Коммит 2.3: Движок исполнения запросов, CLI REPL и ASCII TablePrinter
+git add src/main/java/ru/danis/dbms/engine/QueryEngine.java \
+        src/main/java/ru/danis/dbms/cli/TablePrinter.java \
+        src/main/java/ru/danis/dbms/cli/ConsoleApp.java \
+        src/main/java/ru/danis/dbms/Main.java
+git commit -m "feat(engine,cli): implement query execution engine, CLI REPL, and tabular ASCII printer"
+
+# Коммит 2.4: Графический интерфейс на Java Swing
+git add src/main/java/ru/danis/dbms/gui/DatabaseGui.java
+git commit -m "feat(gui): implement graphical user interface in Swing with schema tree and query editor"
+```
+
+---
+
+### 3. Максим Жулин (B-Tree Indexing, Query Optimization & QA)
+
+**Зона ответственности:**
+- Реализация структуры данных сбалансированного **B-Tree** индекса (`Index`, `BTreeIndex` со степенью $T=8$), алгоритмов вставки с расщеплением переполненных узлов, точечного поиска и диапазонного сканирования.
+- Сохранение деревьев индексов на диск и их автоматическое восстановление при запуске.
+- Разработка планов выполнения запросов (`ExecutionPlan`, `SeqScanPlan`, `IndexScanPlan`) и модуля оптимизации `WHERE`-предикатов для перехода с $O(N)$ на $O(\log N)$.
+- Разработка автоматизированного стенда тестирования производительности (`BenchmarkRunner`) и снятие метрик.
+- Разработка полного набора автоматизированных JUnit 5 тестов (модели, парсер, хранилище, целостность FK, B-Tree, сложные граничные сценарии).
+- Анализ производительности и оформление технического отчета в `README.md`.
+
+**Закрепленные файлы:**
+- `src/main/java/ru/danis/dbms/index/Index.java`
+- `src/main/java/ru/danis/dbms/index/BTreeIndex.java`
+- `src/main/java/ru/danis/dbms/engine/ExecutionPlan.java`
+- `src/main/java/ru/danis/dbms/engine/SeqScanPlan.java`
+- `src/main/java/ru/danis/dbms/engine/IndexScanPlan.java`
+- `src/main/java/ru/danis/dbms/benchmark/BenchmarkRunner.java`
+- `src/test/java/ru/danis/dbms/BTreeIndexTest.java`
+- `src/test/java/ru/danis/dbms/SqlParserTest.java`
+- `src/test/java/ru/danis/dbms/DataTypeTest.java`
+- `src/test/java/ru/danis/dbms/ForeignKeyTest.java`
+- `src/test/java/ru/danis/dbms/StorageEngineTest.java`
+- `src/test/java/ru/danis/dbms/QueryEngineTest.java`
+- `src/test/java/ru/danis/dbms/SkepticalReviewTest.java`
+- `README.md` (секции тестирования производительности, бенчмарков и выводов)
+
+**Детальный сценарий коммитов (Максим Жулин):**
+
+```bash
+# Коммит 3.1: Реализация B-Tree индекса с поддержкой точечного и диапазонного поиска
+git add src/main/java/ru/danis/dbms/index/Index.java \
+        src/main/java/ru/danis/dbms/index/BTreeIndex.java
+git commit -m "feat(index): implement persistent B-Tree indexing with point and range lookups"
+
+# Коммит 3.2: Планировщик выполнения запросов (SeqScan vs IndexScan) и оптимизатор
+git add src/main/java/ru/danis/dbms/engine/ExecutionPlan.java \
+        src/main/java/ru/danis/dbms/engine/SeqScanPlan.java \
+        src/main/java/ru/danis/dbms/engine/IndexScanPlan.java
+git commit -m "feat(optimizer): implement query execution plans (IndexScan vs SeqScan) and explain functionality"
+
+# Коммит 3.3: Модуль нагрузочного бенчмаркинга
+git add src/main/java/ru/danis/dbms/benchmark/BenchmarkRunner.java
+git commit -m "feat(benchmark): add automated benchmark comparing full table scan vs B-Tree index lookup"
+
+# Коммит 3.4: Полный комплект модульных и регрессионных тестов (JUnit 5)
+git add src/test/java/ru/danis/dbms/
+git commit -m "test: add comprehensive JUnit 5 test suite for B-Tree, SQL parser, foreign keys, and edge cases"
+
+# Коммит 3.5: Документация замеров производительности и аналитические выводы
+git add README.md
+git commit -m "docs: document benchmark performance results, team member responsibilities, and conclusions"
+```
+
+---
+
+### Сводная таблица распределения коммитов
+
+| № | Автор | Ветка | Сообщение коммита | Назначение |
+|---|---|---|---|---|
+| **1** | Егоров Даниил | `feature/core-storage` | `feat(model): implement relational domain entities...` | Доменные сущности, типы, валидация строк |
+| **2** | Егоров Даниил | `feature/core-storage` | `feat(storage): implement FileStorageEngine...` | Персистентность на диске, JSON, WAL, Safe Move |
+| **3** | Егоров Даниил | `feature/core-storage` | `feat(repository): implement table repositories...` | Репозитории, проверка Primary Key и Foreign Key |
+| **4** | Егор Глазов | `feature/sql-parser-ui` | `feat(parser): implement SqlLexer and AST...` | Лексер, грамматика токенов, AST-ноды |
+| **5** | Егор Глазов | `feature/sql-parser-ui` | `feat(parser): implement recursive descent SqlParser...` | Синтаксический анализатор DDL/DML/DQL |
+| **6** | Егор Глазов | `feature/sql-parser-ui` | `feat(engine,cli): implement query execution engine...` | QueryEngine, REPL терминал, табличный вывод |
+| **7** | Егор Глазов | `feature/sql-parser-ui` | `feat(gui): implement graphical user interface...` | Swing GUI, каталог схемы, редактор запросов |
+| **8** | Максим Жулин | `feature/btree-index-qa` | `feat(index): implement persistent B-Tree indexing...` | Сбалансированное B-дерево, дисковые индексы |
+| **9** | Максим Жулин | `feature/btree-index-qa` | `feat(optimizer): implement query execution plans...` | Оптимизатор SeqScan/IndexScan, EXPLAIN |
+| **10** | Максим Жулин | `feature/btree-index-qa` | `feat(benchmark): add automated benchmark...` | Стенд сравнения скорости поиска с индексом и без |
+| **11** | Максим Жулин | `feature/btree-index-qa` | `test: add comprehensive JUnit 5 test suite...` | 34 автоматических теста, граничные условия |
+| **12** | Максим Жулин | `feature/btree-index-qa` | `docs: document benchmark performance results...` | Оформление README, таблицы бенчмарков, выводы |
 
 ---
 
