@@ -91,15 +91,30 @@ public class FileTableRepository implements TableRepository {
 
     @Override
     public synchronized void insertBatch(List<Row> batchRows) throws IOException {
+        String pkCol = schema.getPrimaryKeyColumn();
+        Set<Object> batchPks = new HashSet<>();
         for (Row row : batchRows) {
             validateRow(row);
-            validateUniqueConstraint(row);
+            if (pkCol != null) {
+                Object pkVal = row.get(pkCol);
+                if (pkVal == null) {
+                    throw new IllegalArgumentException("Primary key column '" + pkCol + "' cannot be null");
+                }
+                DataType pkType = schema.getColumn(pkCol).getType();
+                Object castPk = pkType.cast(pkVal);
+                if (primaryKeyIndex.containsKey(castPk) || !batchPks.add(castPk)) {
+                    throw new IllegalArgumentException("Primary key violation: Key " + pkVal + " already exists in table " + schema.getTableName());
+                }
+            }
+        }
+
+        for (Row row : batchRows) {
             rows.add(row);
             Object rowId = getRecordIdentifier(row, rows.size() - 1);
 
-            String pkCol = schema.getPrimaryKeyColumn();
             if (pkCol != null) {
-                primaryKeyIndex.put(row.get(pkCol), row);
+                DataType pkType = schema.getColumn(pkCol).getType();
+                primaryKeyIndex.put(pkType.cast(row.get(pkCol)), row);
             }
 
             for (Index idx : indexesByName.values()) {
@@ -135,93 +150,104 @@ public class FileTableRepository implements TableRepository {
 
     @Override
     public synchronized int update(Condition condition, Map<String, Object> newValues) throws IOException {
-        int updated = 0;
         String pkCol = schema.getPrimaryKeyColumn();
+        List<Row> matchingRows = new ArrayList<>();
+        List<Integer> matchingIndices = new ArrayList<>();
 
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
             if (condition == null || condition.test(r, schema)) {
-                Object oldRowId = getRecordIdentifier(r, i);
-
-                for (Index idx : indexesByName.values()) {
-                    if (newValues.containsKey(idx.getColumnName())) {
-                        Object oldVal = r.get(idx.getColumnName());
-                        if (oldVal instanceof Comparable<?> comp) {
-                            idx.delete(comp, oldRowId);
-                        }
-                    }
-                }
-
-                if (pkCol != null && newValues.containsKey(pkCol)) {
-                    Object newPk = schema.getColumn(pkCol).getType().cast(newValues.get(pkCol));
-                    Object oldPk = r.get(pkCol);
-                    if (!Objects.equals(oldPk, newPk) && primaryKeyIndex.containsKey(newPk)) {
-                        throw new IllegalArgumentException("Primary key violation: Key " + newPk + " already exists");
-                    }
-                    primaryKeyIndex.remove(oldPk);
-                    primaryKeyIndex.put(newPk, r);
-                }
-
-                for (Map.Entry<String, Object> entry : newValues.entrySet()) {
-                    String col = entry.getKey();
-                    if (schema.hasColumn(col)) {
-                        DataType type = schema.getColumn(col).getType();
-                        r.set(col, type.cast(entry.getValue()));
-                    }
-                }
-
-                Object newRowId = getRecordIdentifier(r, i);
-                for (Index idx : indexesByName.values()) {
-                    if (newValues.containsKey(idx.getColumnName())) {
-                        Object newVal = r.get(idx.getColumnName());
-                        if (newVal instanceof Comparable<?> comp) {
-                            idx.insert(comp, newRowId);
-                        }
-                    }
-                }
-
-                updated++;
+                matchingRows.add(r);
+                matchingIndices.add(i);
             }
         }
 
-        if (updated > 0) {
-            flush();
+        if (matchingRows.isEmpty()) {
+            return 0;
         }
-        return updated;
+
+        boolean pkUpdating = pkCol != null && newValues.containsKey(pkCol);
+        if (pkUpdating) {
+            DataType pkType = schema.getColumn(pkCol).getType();
+            Object rawNewPk = newValues.get(pkCol);
+            if (rawNewPk == null) {
+                throw new IllegalArgumentException("Primary key column '" + pkCol + "' cannot be null");
+            }
+            Object castNewPk = pkType.cast(rawNewPk);
+            if (matchingRows.size() > 1) {
+                throw new IllegalArgumentException("Primary key violation: Cannot set multiple rows to the same key " + castNewPk);
+            }
+            Row targetRow = matchingRows.get(0);
+            Object currentPk = pkType.cast(targetRow.get(pkCol));
+            if (!Objects.equals(currentPk, castNewPk) && primaryKeyIndex.containsKey(castNewPk)) {
+                throw new IllegalArgumentException("Primary key violation: Key " + castNewPk + " already exists");
+            }
+        }
+
+        for (int m = 0; m < matchingRows.size(); m++) {
+            Row r = matchingRows.get(m);
+            int rowIndex = matchingIndices.get(m);
+            Object oldRowId = getRecordIdentifier(r, rowIndex);
+            Object oldPk = pkCol != null ? schema.getColumn(pkCol).getType().cast(r.get(pkCol)) : null;
+
+            for (Index idx : indexesByName.values()) {
+                Object oldVal = r.get(idx.getColumnName());
+                if (oldVal instanceof Comparable<?> comp) {
+                    idx.delete(comp, oldRowId);
+                }
+            }
+
+            if (pkUpdating) {
+                DataType pkType = schema.getColumn(pkCol).getType();
+                Object newPk = pkType.cast(newValues.get(pkCol));
+                primaryKeyIndex.remove(oldPk);
+                primaryKeyIndex.put(newPk, r);
+            }
+
+            for (Map.Entry<String, Object> entry : newValues.entrySet()) {
+                String col = entry.getKey();
+                if (schema.hasColumn(col)) {
+                    DataType type = schema.getColumn(col).getType();
+                    r.set(col, type.cast(entry.getValue()));
+                }
+            }
+
+            Object newRowId = getRecordIdentifier(r, rowIndex);
+            for (Index idx : indexesByName.values()) {
+                Object newVal = r.get(idx.getColumnName());
+                if (newVal instanceof Comparable<?> comp) {
+                    idx.insert(comp, newRowId);
+                }
+            }
+        }
+
+        flush();
+        return matchingRows.size();
     }
 
     @Override
     public synchronized int delete(Condition condition) throws IOException {
-        List<Row> toRemove = new ArrayList<>();
-        String pkCol = schema.getPrimaryKeyColumn();
+        List<Row> remaining = new ArrayList<>();
+        List<Row> removed = new ArrayList<>();
 
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
             if (condition == null || condition.test(r, schema)) {
-                toRemove.add(r);
-                Object rowId = getRecordIdentifier(r, i);
-
-                for (Index idx : indexesByName.values()) {
-                    Object val = r.get(idx.getColumnName());
-                    if (val instanceof Comparable<?> comp) {
-                        idx.delete(comp, rowId);
-                    }
-                }
-
-                if (pkCol != null) {
-                    primaryKeyIndex.remove(r.get(pkCol));
-                }
+                removed.add(r);
+            } else {
+                remaining.add(r);
             }
         }
 
-        rows.removeAll(toRemove);
-
-        if (!toRemove.isEmpty()) {
+        if (!removed.isEmpty()) {
+            rows.clear();
+            rows.addAll(remaining);
+            rebuildPrimaryKeyIndex();
             rebuildAllIndexes();
             flush();
         }
 
-        return toRemove.size();
+        return removed.size();
     }
 
     @Override

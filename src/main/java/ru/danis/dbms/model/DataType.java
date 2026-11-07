@@ -48,9 +48,6 @@ public enum DataType {
             return null;
         }
         String trimmed = raw.trim();
-        if (trimmed.equalsIgnoreCase("null")) {
-            return null;
-        }
 
         try {
             return switch (this) {

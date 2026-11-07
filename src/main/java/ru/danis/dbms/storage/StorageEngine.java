@@ -28,6 +28,9 @@ public interface StorageEngine {
     void saveIndex(Index index) throws IOException;
 
     Index loadIndex(String tableName, String indexName, String columnName, DataType keyType) throws IOException;
+    default Index loadIndex(String tableName, String indexName) throws IOException {
+        return loadIndex(tableName, indexName, null, null);
+    }
 
     void dropIndex(String tableName, String indexName) throws IOException;
 

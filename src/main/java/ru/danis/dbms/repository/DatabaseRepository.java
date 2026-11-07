@@ -32,27 +32,15 @@ public class DatabaseRepository {
                 List<Row> rows = storageEngine.loadRows(tbl, schema);
                 List<Index> indexes = new ArrayList<>();
                 for (String idxName : storageEngine.listIndexesForTable(tbl)) {
-                    Column col = findIndexedColumnForIndex(schema, idxName);
-                    if (col != null) {
-                        Index idx = storageEngine.loadIndex(tbl, idxName, col.getName(), col.getType());
-                        if (idx != null) {
-                            indexes.add(idx);
-                        }
+                    Index idx = storageEngine.loadIndex(tbl, idxName, null, null);
+                    if (idx != null) {
+                        indexes.add(idx);
                     }
                 }
                 FileTableRepository repo = new FileTableRepository(schema, storageEngine, rows, indexes);
                 tables.put(schema.getTableName(), repo);
             }
         }
-    }
-
-    private Column findIndexedColumnForIndex(TableSchema schema, String idxName) {
-        for (Column c : schema.getColumns()) {
-            if (idxName.toLowerCase().contains(c.getName().toLowerCase())) {
-                return c;
-            }
-        }
-        return !schema.getColumns().isEmpty() ? schema.getColumns().get(0) : null;
     }
 
     public synchronized boolean hasTable(String tableName) {
@@ -176,6 +164,79 @@ public class DatabaseRepository {
 
                     if (!exists) {
                         throw new IllegalArgumentException("Foreign key violation in table '" + tableName + "': Referenced value " + val + " not found in " + fk);
+                    }
+                }
+            }
+        }
+    }
+
+    public synchronized void validateForeignKeysOnUpdate(String tableName, Condition condition, Map<String, Object> newValues) {
+        TableRepository repo = getTable(tableName);
+        TableSchema schema = repo.getSchema();
+
+        List<Row> matchingRows = new ArrayList<>();
+        for (Row r : repo.findAll()) {
+            if (condition == null || condition.test(r, schema)) {
+                matchingRows.add(r);
+            }
+        }
+        if (matchingRows.isEmpty()) {
+            return;
+        }
+
+        for (Column col : schema.getColumns()) {
+            if (col.hasForeignKey() && newValues.containsKey(col.getName())) {
+                Object rawVal = newValues.get(col.getName());
+                if (rawVal != null) {
+                    ForeignKey fk = col.getForeignKey();
+                    TableRepository targetRepo = getTable(fk.getTargetTable());
+                    TableSchema targetSchema = targetRepo.getSchema();
+
+                    boolean exists = false;
+                    if (targetSchema.hasPrimaryKey() && targetSchema.getPrimaryKeyColumn().equalsIgnoreCase(fk.getTargetColumn())) {
+                        exists = targetRepo.findByPrimaryKey(rawVal) != null;
+                    } else {
+                        DataType targetType = targetSchema.getColumn(fk.getTargetColumn()).getType();
+                        Object castVal = targetType.cast(rawVal);
+                        for (Row targetRow : targetRepo.findAll()) {
+                            Object targetVal = targetRow.get(fk.getTargetColumn());
+                            if (targetType.compareValues(targetVal, castVal) == 0) {
+                                exists = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!exists) {
+                        throw new IllegalArgumentException("Foreign key violation in table '" + tableName + "': Referenced value " + rawVal + " not found in " + fk);
+                    }
+                }
+            }
+        }
+
+        for (TableRepository childRepo : tables.values()) {
+            if (childRepo.getSchema().getTableName().equalsIgnoreCase(tableName)) {
+                continue;
+            }
+            TableSchema childSchema = childRepo.getSchema();
+            for (Column childCol : childSchema.getColumns()) {
+                if (childCol.hasForeignKey() && childCol.getForeignKey().getTargetTable().equalsIgnoreCase(tableName)) {
+                    String referencedCol = childCol.getForeignKey().getTargetColumn();
+                    if (newValues.containsKey(referencedCol)) {
+                        DataType refType = schema.getColumn(referencedCol).getType();
+                        Object newTargetVal = refType.cast(newValues.get(referencedCol));
+
+                        for (Row parentRow : matchingRows) {
+                            Object oldVal = parentRow.get(referencedCol);
+                            if (oldVal != null && refType.compareValues(oldVal, newTargetVal) != 0) {
+                                for (Row childRow : childRepo.findAll()) {
+                                    Object childVal = childRow.get(childCol.getName());
+                                    if (childVal != null && refType.compareValues(oldVal, childVal) == 0) {
+                                        throw new IllegalStateException("Foreign key violation: Cannot update " + referencedCol + " in table '" + tableName + "' because child table '" + childSchema.getTableName() + "' references it");
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

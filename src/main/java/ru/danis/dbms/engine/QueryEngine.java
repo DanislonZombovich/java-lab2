@@ -184,6 +184,7 @@ public class QueryEngine {
             castUpdates.put(col.getName(), col.getType().parse(entry.getValue()));
         }
 
+        databaseRepository.validateForeignKeysOnUpdate(stmt.getTableName(), stmt.getCondition(), castUpdates);
         int count = repo.update(stmt.getCondition(), castUpdates);
         return QueryResult.forMutation(count, System.nanoTime() - startNs, "Updated " + count + " row(s)");
     }
@@ -271,22 +272,45 @@ public class QueryEngine {
             return new SeqScanPlan(repository, condition);
         }
 
-        if (condition.getConnector() == Condition.LogicalConnector.AND) {
-            if (condition.getLeft().isSimple()) {
-                Index index = repository.getIndexForColumn(condition.getLeft().getColumnName());
-                if (index != null && isSupportedIndexOperator(condition.getLeft().getOperator())) {
-                    return new IndexScanPlan(repository, index, condition.getLeft(), condition.getRight());
-                }
-            }
-            if (condition.getRight().isSimple()) {
-                Index index = repository.getIndexForColumn(condition.getRight().getColumnName());
-                if (index != null && isSupportedIndexOperator(condition.getRight().getOperator())) {
-                    return new IndexScanPlan(repository, index, condition.getRight(), condition.getLeft());
+        List<Condition> conjuncts = new ArrayList<>();
+        if (extractAndConjuncts(condition, conjuncts)) {
+            for (int i = 0; i < conjuncts.size(); i++) {
+                Condition candidate = conjuncts.get(i);
+                if (candidate.isSimple()) {
+                    Index index = repository.getIndexForColumn(candidate.getColumnName());
+                    if (index != null && isSupportedIndexOperator(candidate.getOperator())) {
+                        List<Condition> rest = new ArrayList<>(conjuncts);
+                        rest.remove(i);
+                        Condition residual = combineConjuncts(rest);
+                        return new IndexScanPlan(repository, index, candidate, residual);
+                    }
                 }
             }
         }
 
         return new SeqScanPlan(repository, condition);
+    }
+
+    private boolean extractAndConjuncts(Condition cond, List<Condition> list) {
+        if (cond.isSimple()) {
+            list.add(cond);
+            return true;
+        }
+        if (cond.getConnector() == Condition.LogicalConnector.AND) {
+            return extractAndConjuncts(cond.getLeft(), list) && extractAndConjuncts(cond.getRight(), list);
+        }
+        return false;
+    }
+
+    private Condition combineConjuncts(List<Condition> list) {
+        if (list.isEmpty()) {
+            return null;
+        }
+        Condition result = list.get(0);
+        for (int i = 1; i < list.size(); i++) {
+            result = new Condition(result, Condition.LogicalConnector.AND, list.get(i));
+        }
+        return result;
     }
 
     private boolean isSupportedIndexOperator(ComparisonOperator op) {

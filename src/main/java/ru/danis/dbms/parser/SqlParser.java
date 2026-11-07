@@ -306,6 +306,10 @@ public class SqlParser {
 
     private String consumeLiteralOrWord() {
         Token t = peek();
+        if (t.getType() == TokenType.KEYWORD && t.getValue().equalsIgnoreCase("NULL")) {
+            advance();
+            return null;
+        }
         if (t.getType() == TokenType.STRING_LITERAL ||
             t.getType() == TokenType.NUMBER_LITERAL ||
             t.getType() == TokenType.BOOLEAN_LITERAL ||

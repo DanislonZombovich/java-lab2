@@ -149,6 +149,13 @@ public class FileStorageEngine implements StorageEngine {
         payload.put("columnName", index.getColumnName());
         payload.put("keyType", index.getIndexedType().name());
 
+        TableSchema schema = loadSchema(index.getTableName());
+        if (schema != null && schema.hasPrimaryKey()) {
+            payload.put("idType", schema.getColumn(schema.getPrimaryKeyColumn()).getType().name());
+        } else {
+            payload.put("idType", DataType.INT.name());
+        }
+
         List<Map<String, Object>> entriesList = new ArrayList<>();
         for (Map.Entry<Comparable<?>, List<Object>> entry : index.getEntries().entrySet()) {
             Map<String, Object> node = new LinkedHashMap<>();
@@ -173,6 +180,7 @@ public class FileStorageEngine implements StorageEngine {
         String name = (String) data.get("name");
         String col = (String) data.get("columnName");
         DataType type = DataType.valueOf((String) data.get("keyType"));
+        DataType idType = data.containsKey("idType") ? DataType.valueOf((String) data.get("idType")) : DataType.INT;
 
         BTreeIndex index = new BTreeIndex(name, tableName, col, type);
         List<Map<String, Object>> entriesList = (List<Map<String, Object>>) data.get("entries");
@@ -187,7 +195,13 @@ public class FileStorageEngine implements StorageEngine {
                 if (rawIds != null) {
                     for (Object id : rawIds) {
                         if (id instanceof Number n) {
-                            normalizedIds.add(n.longValue());
+                            if (idType == DataType.DOUBLE) {
+                                normalizedIds.add(n.doubleValue());
+                            } else {
+                                normalizedIds.add(n.longValue());
+                            }
+                        } else if (idType != null) {
+                            normalizedIds.add(idType.cast(id));
                         } else {
                             normalizedIds.add(id);
                         }
@@ -216,9 +230,15 @@ public class FileStorageEngine implements StorageEngine {
         try (var stream = Files.list(indexesDirectory)) {
             stream.filter(p -> p.getFileName().toString().startsWith(prefix) && p.getFileName().toString().endsWith(".idx.json"))
                   .forEach(p -> {
-                      String fn = p.getFileName().toString();
-                      String idxName = fn.substring(prefix.length(), fn.length() - ".idx.json".length());
-                      list.add(idxName);
+                      try {
+                          Map<String, Object> data = mapper.readValue(p.toFile(), new TypeReference<Map<String, Object>>() {});
+                          String actualTable = (String) data.get("tableName");
+                          if (actualTable != null && actualTable.equalsIgnoreCase(tableName)) {
+                              String idxName = (String) data.get("name");
+                              list.add(idxName);
+                          }
+                      } catch (Exception ignored) {
+                      }
                   });
         }
         return list;
