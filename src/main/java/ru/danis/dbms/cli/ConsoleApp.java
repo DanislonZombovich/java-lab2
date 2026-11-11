@@ -89,7 +89,7 @@ public class ConsoleApp {
                 }
             }
 
-            buffer.append(line).append(" ");
+            buffer.append(line).append("\n");
             if (line.endsWith(";")) {
                 String query = buffer.toString().trim();
                 buffer.setLength(0);
@@ -153,10 +153,12 @@ public class ConsoleApp {
         out.println("  EXPLAIN SELECT ...;");
         out.println("  SHOW TABLES; | DESCRIBE <tbl>; | SHOW INDEXES;\n");
         out.println("Commands:");
-        out.println("  help       - Print this guide");
-        out.println("  init-demo  - Initialize sample 'manufacturers' & 'cars' tables");
-        out.println("  benchmark  - Execute performance benchmark (Index vs SeqScan)");
-        out.println("  tables     - Show all created tables");
-        out.println("  exit       - Exit interactive console\n");
+        out.println("  help          - Print this guide");
+        out.println("  init-demo     - Initialize sample 'manufacturers' & 'cars' tables");
+        out.println("  benchmark     - Execute performance benchmark (Index vs SeqScan)");
+        out.println("  tables        - Show all created tables");
+        out.println("  indexes       - Show all created indexes");
+        out.println("  schema <tbl>  - Show columns and keys of a table");
+        out.println("  exit          - Exit interactive console\n");
     }
 }

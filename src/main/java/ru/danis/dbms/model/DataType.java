@@ -69,8 +69,9 @@ public enum DataType {
                 }
                 case DATE -> {
                     String cleanDate = trimmed;
-                    if ((cleanDate.startsWith("'") && cleanDate.endsWith("'")) ||
-                        (cleanDate.startsWith("\"") && cleanDate.endsWith("\""))) {
+                    if (cleanDate.length() >= 2 &&
+                        ((cleanDate.startsWith("'") && cleanDate.endsWith("'")) ||
+                         (cleanDate.startsWith("\"") && cleanDate.endsWith("\"")))) {
                         cleanDate = cleanDate.substring(1, cleanDate.length() - 1);
                     }
                     yield LocalDate.parse(cleanDate, DATE_FORMATTER);

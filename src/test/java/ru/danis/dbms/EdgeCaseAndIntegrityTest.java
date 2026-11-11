@@ -470,4 +470,144 @@ public class EdgeCaseAndIntegrityTest {
         assertTrue(output.contains("Goodbye."));
         repo.close();
     }
+
+    @Test
+    @DisplayName("SHOW INDEXES, DESC, and multi-line CLI comments work end-to-end")
+    void testShowIndexesDescAndCliMultilineComments(@TempDir Path tempDir) throws IOException {
+        FileStorageEngine storage = new FileStorageEngine(tempDir);
+        DatabaseRepository repo = new DatabaseRepository(storage);
+        repo.initialize();
+        QueryEngine engine = new QueryEngine(repo);
+
+        engine.execute("CREATE TABLE cars (id INT PRIMARY KEY, brand VARCHAR);");
+        engine.execute("CREATE INDEX idx_brand ON cars (brand);");
+        engine.execute("INSERT INTO cars VALUES (1, 'Toyota');");
+
+        QueryResult showAll = engine.execute("SHOW INDEXES;");
+        assertEquals(1, showAll.getRows().size());
+        assertEquals("idx_brand", showAll.getRows().get(0).get("INDEX_NAME"));
+
+        QueryResult showFrom = engine.execute("SHOW INDEXES FROM cars;");
+        assertEquals(1, showFrom.getRows().size());
+
+        QueryResult showIn = engine.execute("SHOW INDEXES IN cars;");
+        assertEquals(1, showIn.getRows().size());
+
+        QueryResult descRes = engine.execute("DESC cars;");
+        assertEquals(2, descRes.getRows().size());
+
+        String script = String.join("\n",
+                "indexes",
+                "schema cars",
+                "SELECT *",
+                "-- inline comment inside multiline query",
+                "FROM cars WHERE id = 999;",
+                "exit"
+        ) + "\n";
+
+        ByteArrayInputStream in = new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8));
+        ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(outBuf, true, StandardCharsets.UTF_8);
+
+        ConsoleApp console = new ConsoleApp(engine, in, out);
+        console.start();
+
+        String output = outBuf.toString(StandardCharsets.UTF_8);
+        assertFalse(output.contains("ERROR:"), "CLI output should have no errors: " + output);
+        assertTrue(output.contains("idx_brand"));
+        assertTrue(output.contains("0 row(s) returned"));
+        assertFalse(output.contains("+------+-------+\n+------+-------+"), "Empty table output must not duplicate borders");
+        repo.close();
+    }
+
+    @Test
+    @DisplayName("Invalid INSERT/CREATE syntax and duplicate explicit INSERT columns are rejected")
+    void testMalformedInsertCreateAndDuplicateColumnsRejected(@TempDir Path tempDir) throws IOException {
+        FileStorageEngine storage = new FileStorageEngine(tempDir);
+        DatabaseRepository repo = new DatabaseRepository(storage);
+        repo.initialize();
+        QueryEngine engine = new QueryEngine(repo);
+
+        engine.execute("CREATE TABLE cars (id INT PRIMARY KEY, brand VARCHAR);");
+
+        assertThrows(IllegalArgumentException.class, () -> new SqlParser("INSERT INTO cars VALUES;").parse());
+        assertThrows(IllegalArgumentException.class, () -> new SqlParser("INSERT INTO cars VALUES (1, 'A'), ;").parse());
+        assertThrows(IllegalArgumentException.class, () -> new SqlParser("INSERT INTO cars () VALUES (1, 'A');").parse());
+        assertThrows(IllegalArgumentException.class, () -> new SqlParser("CREATE TABLE bad (id INT, );").parse());
+        assertThrows(IllegalArgumentException.class, () -> engine.execute("INSERT INTO cars (id, id) VALUES (1, 2);"));
+        assertThrows(IllegalArgumentException.class, () -> DataType.DATE.parse("'"));
+    }
+
+    @Test
+    @DisplayName("Dropping one of multiple indexes on the same column preserves IndexScan via remaining index")
+    void testDropSecondIndexPreservesColumnIndex(@TempDir Path tempDir) throws IOException {
+        FileStorageEngine storage = new FileStorageEngine(tempDir);
+        DatabaseRepository repo = new DatabaseRepository(storage);
+        repo.initialize();
+        QueryEngine engine = new QueryEngine(repo);
+
+        engine.execute("CREATE TABLE cars (id INT PRIMARY KEY, brand VARCHAR);");
+        engine.execute("INSERT INTO cars VALUES (1, 'Toyota'), (2, 'BMW');");
+        engine.execute("CREATE INDEX idx_brand_1 ON cars (brand);");
+        engine.execute("CREATE INDEX idx_brand_2 ON cars (brand);");
+        engine.execute("DROP INDEX idx_brand_2;");
+
+        QueryResult explain = engine.execute("EXPLAIN SELECT * FROM cars WHERE brand = 'Toyota';");
+        String plan = explain.getRows().get(0).get("PLAN").toString();
+        assertTrue(plan.contains("IndexScan"), "Remaining index must stay active after dropping duplicate column index: " + plan);
+        assertTrue(plan.contains("idx_brand_1"));
+        assertEquals(1, engine.execute("SELECT * FROM cars WHERE brand = 'Toyota';").getRows().size());
+    }
+
+    @Test
+    @DisplayName("Truncated WAL trailing line recovers cleanly and reconciles indexes")
+    void testTruncatedWalLineRecovery(@TempDir Path tempDir) throws IOException {
+        FileStorageEngine storage = new FileStorageEngine(tempDir);
+        DatabaseRepository repo = new DatabaseRepository(storage);
+        repo.initialize();
+        QueryEngine engine = new QueryEngine(repo);
+
+        engine.execute("CREATE TABLE cars (id INT PRIMARY KEY, brand VARCHAR);");
+        engine.execute("CREATE INDEX idx_brand ON cars (brand);");
+        engine.execute("INSERT INTO cars VALUES (1, 'Toyota'), (2, 'Honda');");
+
+        BTreeIndex stale = new BTreeIndex("idx_brand", "cars", "brand", DataType.VARCHAR);
+        stale.insert("Toyota", 1L);
+        storage.saveIndex(stale);
+
+        Path walFile = tempDir.resolve("wal").resolve("wal.log");
+        Files.writeString(walFile, "{\"sequenceNumber\":99,\"operation\":\"TRUNCATED\n",
+                StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
+
+        FileStorageEngine recoveredStorage = new FileStorageEngine(tempDir);
+        DatabaseRepository recoveredRepo = new DatabaseRepository(recoveredStorage);
+        recoveredRepo.initialize();
+        QueryEngine recoveredEngine = new QueryEngine(recoveredRepo);
+
+        assertTrue(recoveredStorage.readWalEntries().isEmpty());
+        assertEquals(1, recoveredEngine.execute("SELECT * FROM cars WHERE brand = 'Honda';").getRows().size());
+        recoveredRepo.close();
+    }
+
+    @Test
+    @DisplayName("Tables without primary key maintain accurate positional indexes across UPDATE and DELETE")
+    void testKeylessTableIndexedUpdateAndDelete(@TempDir Path tempDir) throws IOException {
+        FileStorageEngine storage = new FileStorageEngine(tempDir);
+        DatabaseRepository repo = new DatabaseRepository(storage);
+        repo.initialize();
+        QueryEngine engine = new QueryEngine(repo);
+
+        engine.execute("CREATE TABLE logs (tag VARCHAR, score DOUBLE);");
+        engine.execute("CREATE INDEX idx_tag ON logs (tag);");
+        engine.execute("INSERT INTO logs VALUES ('alpha', 1.0), ('beta', 2.0), ('gamma', 3.0);");
+
+        engine.execute("DELETE FROM logs WHERE tag = 'alpha';");
+        engine.execute("UPDATE logs SET score = 9.0 WHERE tag = 'gamma';");
+
+        QueryResult gamma = engine.execute("SELECT score FROM logs WHERE tag = 'gamma';");
+        assertEquals(1, gamma.getRows().size());
+        assertEquals(9.0, (Double) gamma.getRows().get(0).get("score"), 0.0001);
+        assertTrue(engine.execute("SELECT * FROM logs WHERE tag = 'alpha';").getRows().isEmpty());
+        repo.close();
+    }
 }

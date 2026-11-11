@@ -161,11 +161,15 @@ public class QueryEngine {
                 if (explicitCols.size() != rawValues.size()) {
                     throw new IllegalArgumentException("Column count (" + explicitCols.size() + ") does not match value count (" + rawValues.size() + ")");
                 }
+                Set<String> seenColumns = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
                 for (int i = 0; i < explicitCols.size(); i++) {
                     String colName = explicitCols.get(i);
                     Column col = schema.getColumn(colName);
                     if (col == null) {
                         throw new IllegalArgumentException("Unknown column: " + colName);
+                    }
+                    if (!seenColumns.add(col.getName())) {
+                        throw new IllegalArgumentException("Duplicate column in INSERT: " + col.getName());
                     }
                     row.set(col.getName(), parseColumnLiteral(col, rawValues.get(i)));
                 }

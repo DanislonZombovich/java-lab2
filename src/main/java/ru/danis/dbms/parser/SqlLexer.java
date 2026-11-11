@@ -8,10 +8,10 @@ import java.util.*;
 public class SqlLexer {
 
     private static final Set<String> KEYWORDS = Set.of(
-            "CREATE", "TABLE", "DROP", "INDEX", "ON",
+            "CREATE", "TABLE", "DROP", "INDEX", "INDEXES", "ON", "IN",
             "INSERT", "INTO", "VALUES", "SELECT", "FROM",
             "WHERE", "UPDATE", "SET", "DELETE",
-            "SHOW", "TABLES", "DESCRIBE", "EXPLAIN",
+            "SHOW", "TABLES", "DESCRIBE", "DESC", "EXPLAIN",
             "PRIMARY", "KEY", "REFERENCES", "IF", "NOT", "EXISTS",
             "AND", "OR", "IS", "NULL",
             "INT", "INTEGER", "DOUBLE", "FLOAT", "VARCHAR", "TEXT", "DATE", "BOOLEAN"

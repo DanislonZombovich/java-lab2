@@ -61,7 +61,11 @@ public class FileStorageEngine implements StorageEngine {
         } else {
             List<WalEntry> existing = readWalEntries();
             if (!existing.isEmpty()) {
-                walSequence.set(existing.get(existing.size() - 1).getSequenceNumber() + 1);
+                long maxSeq = existing.stream()
+                        .mapToLong(WalEntry::getSequenceNumber)
+                        .max()
+                        .orElse(0L);
+                walSequence.set(maxSeq + 1);
             }
         }
     }
@@ -285,10 +289,15 @@ public class FileStorageEngine implements StorageEngine {
         }
         List<WalEntry> entries = new ArrayList<>();
         List<String> lines = Files.readAllLines(walFile, StandardCharsets.UTF_8);
-        for (String line : lines) {
-            String trimmed = line.trim();
+        for (int i = 0; i < lines.size(); i++) {
+            String trimmed = lines.get(i).trim();
             if (!trimmed.isEmpty()) {
-                entries.add(mapper.readValue(trimmed, WalEntry.class));
+                try {
+                    entries.add(mapper.readValue(trimmed, WalEntry.class));
+                } catch (IOException e) {
+                    System.err.println("Warning: skipping corrupted WAL line " + (i + 1) + ": " + e.getMessage());
+                    entries.add(new WalEntry(0L, Instant.now(), "CORRUPT_RECOVERY", "*", "Truncated WAL line " + (i + 1)));
+                }
             }
         }
         return entries;

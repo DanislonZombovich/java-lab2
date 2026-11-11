@@ -116,7 +116,7 @@ public class SqlParser {
 
         List<Column> columns = new ArrayList<>();
 
-        while (!check(TokenType.RPAREN) && !check(TokenType.EOF)) {
+        do {
             String colName = consumeIdentifierOrKeyword();
             String typeName = consumeIdentifierOrKeyword();
             DataType type = DataType.fromString(typeName);
@@ -152,11 +152,7 @@ public class SqlParser {
             }
 
             columns.add(new Column(colName, type, primaryKey, !notNull && !primaryKey, fk));
-
-            if (!match(TokenType.COMMA)) {
-                break;
-            }
-        }
+        } while (match(TokenType.COMMA));
 
         consume(TokenType.RPAREN, "Expected ')' at end of column definitions");
         return new CreateTableStatement(new TableSchema(tableName, columns), ifNotExists);
@@ -187,34 +183,26 @@ public class SqlParser {
 
         List<String> columns = new ArrayList<>();
         if (match(TokenType.LPAREN)) {
-            while (!check(TokenType.RPAREN) && !check(TokenType.EOF)) {
+            do {
                 columns.add(consumeIdentifierOrKeyword());
-                if (!match(TokenType.COMMA)) {
-                    break;
-                }
-            }
+            } while (match(TokenType.COMMA));
             consume(TokenType.RPAREN, "Expected ')' after column list");
         }
 
         consumeKeyword("VALUES");
         List<List<String>> rows = new ArrayList<>();
 
-        while (!check(TokenType.EOF) && !check(TokenType.SEMICOLON)) {
+        do {
             consume(TokenType.LPAREN, "Expected '(' before row values");
             List<String> values = new ArrayList<>();
-            while (!check(TokenType.RPAREN) && !check(TokenType.EOF)) {
-                values.add(consumeLiteralOrWord());
-                if (!match(TokenType.COMMA)) {
-                    break;
-                }
+            if (!check(TokenType.RPAREN)) {
+                do {
+                    values.add(consumeLiteralOrWord());
+                } while (match(TokenType.COMMA));
             }
             consume(TokenType.RPAREN, "Expected ')' after row values");
             rows.add(values);
-
-            if (!match(TokenType.COMMA)) {
-                break;
-            }
-        }
+        } while (match(TokenType.COMMA));
 
         return new InsertStatement(tableName, columns, rows);
     }

@@ -67,15 +67,16 @@ public class TablePrinter {
         out.println(headerLine);
         out.println(border);
 
-        for (String[] rowData : formattedRows) {
-            StringBuilder rowLine = new StringBuilder("|");
-            for (int i = 0; i < headers.size(); i++) {
-                rowLine.append(String.format(" %-" + colWidths[i] + "s |", rowData[i]));
+        if (!formattedRows.isEmpty()) {
+            for (String[] rowData : formattedRows) {
+                StringBuilder rowLine = new StringBuilder("|");
+                for (int i = 0; i < headers.size(); i++) {
+                    rowLine.append(String.format(" %-" + colWidths[i] + "s |", rowData[i]));
+                }
+                out.println(rowLine);
             }
-            out.println(rowLine);
+            out.println(border);
         }
-
-        out.println(border);
         out.printf("%d row(s) returned (%.2f ms)%n", rows.size(), result.getExecutionTimeMs());
         if (result.getExecutionPlan() != null) {
             out.printf("Execution Plan: %s%n", result.getExecutionPlan());

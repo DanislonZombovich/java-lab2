@@ -299,7 +299,14 @@ public class FileTableRepository implements TableRepository {
     public synchronized void removeIndex(String indexName) throws IOException {
         Index idx = indexesByName.remove(indexName);
         if (idx != null) {
-            indexesByColumn.remove(idx.getColumnName());
+            String colName = idx.getColumnName();
+            indexesByColumn.remove(colName);
+            for (Index remaining : indexesByName.values()) {
+                if (remaining.getColumnName().equalsIgnoreCase(colName)) {
+                    indexesByColumn.put(colName, remaining);
+                    break;
+                }
+            }
             storageEngine.dropIndex(schema.getTableName(), indexName);
         }
     }

@@ -79,7 +79,8 @@ public class DatabaseGui extends JFrame {
         schemaTree.setRootVisible(true);
         schemaTree.addTreeSelectionListener(e -> {
             DefaultMutableTreeNode node = (DefaultMutableTreeNode) schemaTree.getLastSelectedPathComponent();
-            if (node != null && node.getUserObject() instanceof String name) {
+            Object root = schemaTree.getModel().getRoot();
+            if (node != null && node.getParent() == root && node.getUserObject() instanceof String name) {
                 if (repository.hasTable(name)) {
                     queryArea.setText("SELECT * FROM " + name + ";");
                 }
@@ -128,7 +129,7 @@ public class DatabaseGui extends JFrame {
             if (q.isEmpty()) {
                 return;
             }
-            if (!q.toLowerCase().startsWith("explain")) {
+            if (!q.toLowerCase(java.util.Locale.US).matches("(?s)^explain\\b.*")) {
                 queryArea.setText("EXPLAIN " + q);
             }
             runQuery();
@@ -157,6 +158,7 @@ public class DatabaseGui extends JFrame {
             @Override
             public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_F5 || (e.isControlDown() && e.getKeyCode() == KeyEvent.VK_ENTER)) {
+                    e.consume();
                     runQuery();
                 }
             }
@@ -209,7 +211,7 @@ public class DatabaseGui extends JFrame {
     private void renderResult(QueryResult result) {
         statusLabel.setForeground(new Color(20, 100, 20));
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format(" %s | Executed in %.2f ms", result.getMessage(), result.getExecutionTimeMs()));
+        sb.append(String.format(java.util.Locale.US, " %s | Executed in %.2f ms", result.getMessage(), result.getExecutionTimeMs()));
         if (result.getExecutionPlan() != null) {
             sb.append(" | Plan: ").append(result.getExecutionPlan());
         }
