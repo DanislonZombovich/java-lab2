@@ -17,14 +17,30 @@ public class QueryEngine {
 
     private final DatabaseRepository databaseRepository;
 
+    /**
+     * Creates a QueryEngine backed by the specified database repository.
+     *
+     * @param databaseRepository database repository managing tables and indexes
+     */
     public QueryEngine(DatabaseRepository databaseRepository) {
         this.databaseRepository = Objects.requireNonNull(databaseRepository, "databaseRepository cannot be null");
     }
 
+    /**
+     * Returns the underlying database repository.
+     *
+     * @return database repository instance
+     */
     public DatabaseRepository getDatabaseRepository() {
         return databaseRepository;
     }
 
+    /**
+     * Parses and executes a SQL statement string.
+     *
+     * @param sql SQL statement to execute
+     * @return structured execution result
+     */
     public QueryResult execute(String sql) {
         if (sql == null || sql.trim().isEmpty()) {
             throw new IllegalArgumentException("SQL query cannot be empty");
@@ -34,6 +50,12 @@ public class QueryEngine {
         return execute(stmt);
     }
 
+    /**
+     * Executes a pre-parsed SQL AST statement.
+     *
+     * @param stmt parsed SQL statement
+     * @return structured execution result
+     */
     public QueryResult execute(Statement stmt) {
         long startNs = System.nanoTime();
         try {
@@ -104,6 +126,29 @@ public class QueryEngine {
         }
     }
 
+    private Object parseColumnLiteral(Column col, String raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (col.getType() == DataType.VARCHAR) {
+            return raw;
+        }
+        return col.getType().parse(raw);
+    }
+
+    private void validateWhereColumns(TableSchema schema, Condition condition) {
+        if (condition == null) {
+            return;
+        }
+        Set<String> cols = new LinkedHashSet<>();
+        condition.collectColumns(cols);
+        for (String col : cols) {
+            if (!schema.hasColumn(col)) {
+                throw new IllegalArgumentException("Unknown column in WHERE clause: " + col);
+            }
+        }
+    }
+
     private QueryResult handleInsert(InsertStatement stmt, long startNs) throws IOException {
         TableRepository repo = databaseRepository.getTable(stmt.getTableName());
         TableSchema schema = repo.getSchema();
@@ -122,7 +167,7 @@ public class QueryEngine {
                     if (col == null) {
                         throw new IllegalArgumentException("Unknown column: " + colName);
                     }
-                    row.set(col.getName(), col.getType().parse(rawValues.get(i)));
+                    row.set(col.getName(), parseColumnLiteral(col, rawValues.get(i)));
                 }
                 for (Column col : schema.getColumns()) {
                     if (!row.has(col.getName())) {
@@ -138,7 +183,7 @@ public class QueryEngine {
                 }
                 for (int i = 0; i < schemaCols.size(); i++) {
                     Column col = schemaCols.get(i);
-                    row.set(col.getName(), col.getType().parse(rawValues.get(i)));
+                    row.set(col.getName(), parseColumnLiteral(col, rawValues.get(i)));
                 }
             }
 
@@ -153,6 +198,7 @@ public class QueryEngine {
     private QueryResult handleSelect(SelectStatement stmt, long startNs) {
         TableRepository repo = databaseRepository.getTable(stmt.getTableName());
         TableSchema schema = repo.getSchema();
+        validateWhereColumns(schema, stmt.getCondition());
 
         List<String> projectedColNames = resolveProjectedColumns(schema, stmt);
         ExecutionPlan plan = buildOptimizedPlan(repo, stmt.getCondition());
@@ -173,6 +219,7 @@ public class QueryEngine {
     private QueryResult handleUpdate(UpdateStatement stmt, long startNs) throws IOException {
         TableRepository repo = databaseRepository.getTable(stmt.getTableName());
         TableSchema schema = repo.getSchema();
+        validateWhereColumns(schema, stmt.getCondition());
 
         Map<String, Object> castUpdates = new HashMap<>();
         for (Map.Entry<String, String> entry : stmt.getRawUpdates().entrySet()) {
@@ -181,7 +228,7 @@ public class QueryEngine {
             if (col == null) {
                 throw new IllegalArgumentException("Unknown column in UPDATE: " + colName);
             }
-            castUpdates.put(col.getName(), col.getType().parse(entry.getValue()));
+            castUpdates.put(col.getName(), parseColumnLiteral(col, entry.getValue()));
         }
 
         databaseRepository.validateForeignKeysOnUpdate(stmt.getTableName(), stmt.getCondition(), castUpdates);
@@ -190,8 +237,9 @@ public class QueryEngine {
     }
 
     private QueryResult handleDelete(DeleteStatement stmt, long startNs) throws IOException {
-        databaseRepository.validateForeignKeysOnDelete(stmt.getTableName(), stmt.getCondition());
         TableRepository repo = databaseRepository.getTable(stmt.getTableName());
+        validateWhereColumns(repo.getSchema(), stmt.getCondition());
+        databaseRepository.validateForeignKeysOnDelete(stmt.getTableName(), stmt.getCondition());
         int count = repo.delete(stmt.getCondition());
         return QueryResult.forMutation(count, System.nanoTime() - startNs, "Deleted " + count + " row(s)");
     }
@@ -253,12 +301,20 @@ public class QueryEngine {
     private QueryResult handleExplain(ExplainStatement stmt, long startNs) {
         if (stmt.getInnerStatement() instanceof SelectStatement sel) {
             TableRepository repo = databaseRepository.getTable(sel.getTableName());
+            validateWhereColumns(repo.getSchema(), sel.getCondition());
             ExecutionPlan plan = buildOptimizedPlan(repo, sel.getCondition());
             return QueryResult.forExplain(plan.describe(), System.nanoTime() - startNs);
         }
         return QueryResult.forExplain("Execution plan available primarily for SELECT queries", System.nanoTime() - startNs);
     }
 
+    /**
+     * Selects an index-backed or sequential execution plan for the given condition.
+     *
+     * @param repository target table repository
+     * @param condition optional WHERE condition tree
+     * @return chosen execution plan
+     */
     public ExecutionPlan buildOptimizedPlan(TableRepository repository, Condition condition) {
         if (condition == null) {
             return new SeqScanPlan(repository, null);
@@ -266,7 +322,7 @@ public class QueryEngine {
 
         if (condition.isSimple()) {
             Index index = repository.getIndexForColumn(condition.getColumnName());
-            if (index != null && isSupportedIndexOperator(condition.getOperator())) {
+            if (index != null && condition.getTargetValue() != null && isSupportedIndexOperator(condition.getOperator())) {
                 return new IndexScanPlan(repository, index, condition, null);
             }
             return new SeqScanPlan(repository, condition);
@@ -278,7 +334,7 @@ public class QueryEngine {
                 Condition candidate = conjuncts.get(i);
                 if (candidate.isSimple()) {
                     Index index = repository.getIndexForColumn(candidate.getColumnName());
-                    if (index != null && isSupportedIndexOperator(candidate.getOperator())) {
+                    if (index != null && candidate.getTargetValue() != null && isSupportedIndexOperator(candidate.getOperator())) {
                         List<Condition> rest = new ArrayList<>(conjuncts);
                         rest.remove(i);
                         Condition residual = combineConjuncts(rest);

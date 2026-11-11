@@ -15,6 +15,15 @@ public class WalEntry {
     private final String tableName;
     private final String details;
 
+    /**
+     * Creates a WAL entry.
+     *
+     * @param sequenceNumber monotonic sequence identifier
+     * @param timestamp      creation timestamp
+     * @param operation      operation name
+     * @param tableName      target table name
+     * @param details        operation summary
+     */
     @JsonCreator
     public WalEntry(
             @JsonProperty("sequenceNumber") long sequenceNumber,
@@ -29,22 +38,47 @@ public class WalEntry {
         this.details = details;
     }
 
+    /**
+     * Returns the monotonic sequence number.
+     *
+     * @return monotonic sequence number
+     */
     public long getSequenceNumber() {
         return sequenceNumber;
     }
 
+    /**
+     * Returns the entry creation timestamp.
+     *
+     * @return entry timestamp
+     */
     public Instant getTimestamp() {
         return timestamp;
     }
 
+    /**
+     * Returns the logged operation type.
+     *
+     * @return logged operation type
+     */
     public String getOperation() {
         return operation;
     }
 
+    /**
+     * Returns the target table name.
+     *
+     * @return target table name
+     */
     public String getTableName() {
         return tableName;
     }
 
+    /**
+     * Returns operation details.
+     *
+     * @return operation details
+     */
     public String getDetails() {
         return details;
     }

@@ -18,6 +18,14 @@ import java.nio.file.Paths;
  */
 public class Main {
 
+    private Main() {
+    }
+
+    /**
+     * Application entry point supporting CLI, Swing GUI, demo initialization, and benchmark modes.
+     *
+     * @param args command-line arguments (--gui, --benchmark, --init-demo, --data &lt;path&gt;)
+     */
     public static void main(String[] args) {
         Path dataDir = Paths.get("data");
         boolean launchGui = false;
@@ -44,15 +52,23 @@ public class Main {
             QueryEngine engine = new QueryEngine(databaseRepository);
 
             if (initDemoOnly) {
-                ConsoleApp console = new ConsoleApp(engine, System.in, System.out);
-                console.initDemoData();
-                System.out.println("Demo initialized. Exiting.");
+                try {
+                    ConsoleApp console = new ConsoleApp(engine, System.in, System.out);
+                    console.initDemoData();
+                    System.out.println("Demo initialized. Exiting.");
+                } finally {
+                    databaseRepository.close();
+                }
                 return;
             }
 
             if (runBenchmark) {
-                BenchmarkRunner runner = new BenchmarkRunner(databaseRepository);
-                runner.runAndPrint(System.out);
+                try {
+                    BenchmarkRunner runner = new BenchmarkRunner(databaseRepository);
+                    runner.runAndPrint(System.out);
+                } finally {
+                    databaseRepository.close();
+                }
                 return;
             }
 
@@ -66,8 +82,12 @@ public class Main {
                     gui.setVisible(true);
                 });
             } else {
-                ConsoleApp console = new ConsoleApp(engine, System.in, System.out);
-                console.start();
+                try {
+                    ConsoleApp console = new ConsoleApp(engine, System.in, System.out);
+                    console.start();
+                } finally {
+                    databaseRepository.close();
+                }
             }
 
         } catch (IOException e) {

@@ -24,6 +24,14 @@ public class FileTableRepository implements TableRepository {
     private final Map<String, Index> indexesByName;
     private final Map<String, Index> indexesByColumn;
 
+    /**
+     * Creates a file-backed table repository with preloaded rows and indexes.
+     *
+     * @param schema         table schema
+     * @param storageEngine  disk persistence engine
+     * @param initialRows    loaded table rows
+     * @param initialIndexes loaded secondary indexes
+     */
     public FileTableRepository(TableSchema schema, StorageEngine storageEngine, List<Row> initialRows, List<Index> initialIndexes) {
         this.schema = Objects.requireNonNull(schema, "schema cannot be null");
         this.storageEngine = Objects.requireNonNull(storageEngine, "storageEngine cannot be null");
@@ -48,15 +56,17 @@ public class FileTableRepository implements TableRepository {
         if (pkCol == null) {
             return;
         }
+        DataType pkType = schema.getColumn(pkCol).getType();
 
-        for (int i = 0; i < rows.size(); i++) {
-            Row r = rows.get(i);
+        for (Row r : rows) {
             Object pkVal = r.get(pkCol);
             if (pkVal != null) {
-                if (primaryKeyIndex.containsKey(pkVal)) {
-                    throw new IllegalStateException("Duplicate primary key found during table load: " + pkVal);
+                Object castPk = pkType.cast(pkVal);
+                r.set(pkCol, castPk);
+                if (primaryKeyIndex.containsKey(castPk)) {
+                    throw new IllegalStateException("Duplicate primary key found during table load: " + castPk);
                 }
-                primaryKeyIndex.put(pkVal, r);
+                primaryKeyIndex.put(castPk, r);
             }
         }
     }
@@ -68,15 +78,17 @@ public class FileTableRepository implements TableRepository {
 
     @Override
     public synchronized void insert(Row row) throws IOException {
+        normalizeRow(row);
         validateRow(row);
         validateUniqueConstraint(row);
 
-        rows.add(row);
-        Object rowId = getRecordIdentifier(row, rows.size() - 1);
+        Object rowId = getRecordIdentifier(row, rows.size());
+        storageEngine.appendWal("INSERT", schema.getTableName(), "pk=" + rowId);
 
+        rows.add(row);
         String pkCol = schema.getPrimaryKeyColumn();
         if (pkCol != null) {
-            primaryKeyIndex.put(row.get(pkCol), row);
+            primaryKeyIndex.put(castPkValue(row.get(pkCol)), row);
         }
 
         for (Index idx : indexesByName.values()) {
@@ -91,30 +103,34 @@ public class FileTableRepository implements TableRepository {
 
     @Override
     public synchronized void insertBatch(List<Row> batchRows) throws IOException {
+        if (batchRows.isEmpty()) {
+            return;
+        }
         String pkCol = schema.getPrimaryKeyColumn();
         Set<Object> batchPks = new HashSet<>();
         for (Row row : batchRows) {
+            normalizeRow(row);
             validateRow(row);
             if (pkCol != null) {
                 Object pkVal = row.get(pkCol);
                 if (pkVal == null) {
                     throw new IllegalArgumentException("Primary key column '" + pkCol + "' cannot be null");
                 }
-                DataType pkType = schema.getColumn(pkCol).getType();
-                Object castPk = pkType.cast(pkVal);
+                Object castPk = castPkValue(pkVal);
                 if (primaryKeyIndex.containsKey(castPk) || !batchPks.add(castPk)) {
                     throw new IllegalArgumentException("Primary key violation: Key " + pkVal + " already exists in table " + schema.getTableName());
                 }
             }
         }
 
+        storageEngine.appendWal("INSERT_BATCH", schema.getTableName(), "count=" + batchRows.size());
+
         for (Row row : batchRows) {
             rows.add(row);
             Object rowId = getRecordIdentifier(row, rows.size() - 1);
 
             if (pkCol != null) {
-                DataType pkType = schema.getColumn(pkCol).getType();
-                primaryKeyIndex.put(pkType.cast(row.get(pkCol)), row);
+                primaryKeyIndex.put(castPkValue(row.get(pkCol)), row);
             }
 
             for (Index idx : indexesByName.values()) {
@@ -133,9 +149,7 @@ public class FileTableRepository implements TableRepository {
         if (pk == null || !schema.hasPrimaryKey()) {
             return null;
         }
-        DataType pkType = schema.getColumn(schema.getPrimaryKeyColumn()).getType();
-        Object castPk = pkType.cast(pk);
-        return primaryKeyIndex.get(castPk);
+        return primaryKeyIndex.get(castPkFast(pk));
     }
 
     @Override
@@ -150,6 +164,20 @@ public class FileTableRepository implements TableRepository {
 
     @Override
     public synchronized int update(Condition condition, Map<String, Object> newValues) throws IOException {
+        Map<String, Object> normalizedUpdates = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Map.Entry<String, Object> entry : newValues.entrySet()) {
+            String colName = entry.getKey();
+            Column col = schema.getColumn(colName);
+            if (col == null) {
+                throw new IllegalArgumentException("Unknown column in UPDATE: " + colName);
+            }
+            Object castVal = entry.getValue() == null ? null : col.getType().cast(entry.getValue());
+            if (castVal == null && !col.isNullable()) {
+                throw new IllegalArgumentException("Column '" + col.getName() + "' cannot be null");
+            }
+            normalizedUpdates.put(col.getName(), castVal);
+        }
+
         String pkCol = schema.getPrimaryKeyColumn();
         List<Row> matchingRows = new ArrayList<>();
         List<Integer> matchingIndices = new ArrayList<>();
@@ -166,29 +194,29 @@ public class FileTableRepository implements TableRepository {
             return 0;
         }
 
-        boolean pkUpdating = pkCol != null && newValues.containsKey(pkCol);
+        boolean pkUpdating = pkCol != null && normalizedUpdates.containsKey(pkCol);
         if (pkUpdating) {
-            DataType pkType = schema.getColumn(pkCol).getType();
-            Object rawNewPk = newValues.get(pkCol);
-            if (rawNewPk == null) {
+            Object castNewPk = normalizedUpdates.get(pkCol);
+            if (castNewPk == null) {
                 throw new IllegalArgumentException("Primary key column '" + pkCol + "' cannot be null");
             }
-            Object castNewPk = pkType.cast(rawNewPk);
             if (matchingRows.size() > 1) {
                 throw new IllegalArgumentException("Primary key violation: Cannot set multiple rows to the same key " + castNewPk);
             }
             Row targetRow = matchingRows.get(0);
-            Object currentPk = pkType.cast(targetRow.get(pkCol));
+            Object currentPk = castPkValue(targetRow.get(pkCol));
             if (!Objects.equals(currentPk, castNewPk) && primaryKeyIndex.containsKey(castNewPk)) {
                 throw new IllegalArgumentException("Primary key violation: Key " + castNewPk + " already exists");
             }
         }
 
+        storageEngine.appendWal("UPDATE", schema.getTableName(), "affected=" + matchingRows.size());
+
         for (int m = 0; m < matchingRows.size(); m++) {
             Row r = matchingRows.get(m);
             int rowIndex = matchingIndices.get(m);
             Object oldRowId = getRecordIdentifier(r, rowIndex);
-            Object oldPk = pkCol != null ? schema.getColumn(pkCol).getType().cast(r.get(pkCol)) : null;
+            Object oldPk = pkCol != null ? castPkValue(r.get(pkCol)) : null;
 
             for (Index idx : indexesByName.values()) {
                 Object oldVal = r.get(idx.getColumnName());
@@ -198,18 +226,13 @@ public class FileTableRepository implements TableRepository {
             }
 
             if (pkUpdating) {
-                DataType pkType = schema.getColumn(pkCol).getType();
-                Object newPk = pkType.cast(newValues.get(pkCol));
+                Object newPk = normalizedUpdates.get(pkCol);
                 primaryKeyIndex.remove(oldPk);
                 primaryKeyIndex.put(newPk, r);
             }
 
-            for (Map.Entry<String, Object> entry : newValues.entrySet()) {
-                String col = entry.getKey();
-                if (schema.hasColumn(col)) {
-                    DataType type = schema.getColumn(col).getType();
-                    r.set(col, type.cast(entry.getValue()));
-                }
+            for (Map.Entry<String, Object> entry : normalizedUpdates.entrySet()) {
+                r.set(entry.getKey(), entry.getValue());
             }
 
             Object newRowId = getRecordIdentifier(r, rowIndex);
@@ -230,8 +253,7 @@ public class FileTableRepository implements TableRepository {
         List<Row> remaining = new ArrayList<>();
         List<Row> removed = new ArrayList<>();
 
-        for (int i = 0; i < rows.size(); i++) {
-            Row r = rows.get(i);
+        for (Row r : rows) {
             if (condition == null || condition.test(r, schema)) {
                 removed.add(r);
             } else {
@@ -240,6 +262,7 @@ public class FileTableRepository implements TableRepository {
         }
 
         if (!removed.isEmpty()) {
+            storageEngine.appendWal("DELETE", schema.getTableName(), "affected=" + removed.size());
             rows.clear();
             rows.addAll(remaining);
             rebuildPrimaryKeyIndex();
@@ -304,6 +327,42 @@ public class FileTableRepository implements TableRepository {
         }
     }
 
+    @Override
+    public synchronized void reconcileIndexes(boolean deepVerify) throws IOException {
+        for (Index idx : indexesByName.values()) {
+            boolean mismatch = false;
+            int expectedCount = 0;
+
+            for (int i = 0; i < rows.size(); i++) {
+                Row r = rows.get(i);
+                Object val = r.get(idx.getColumnName());
+                if (val instanceof Comparable<?> comp) {
+                    expectedCount++;
+                    if (deepVerify) {
+                        Object rowId = getRecordIdentifier(r, i);
+                        List<Object> found = idx.search(comp);
+                        if (!found.contains(rowId)) {
+                            mismatch = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (mismatch || idx.size() != expectedCount) {
+                idx.clear();
+                for (int i = 0; i < rows.size(); i++) {
+                    Row r = rows.get(i);
+                    Object val = r.get(idx.getColumnName());
+                    if (val instanceof Comparable<?> comp) {
+                        idx.insert(comp, getRecordIdentifier(r, i));
+                    }
+                }
+                storageEngine.saveIndex(idx);
+            }
+        }
+    }
+
     private void rebuildAllIndexes() {
         for (Index idx : indexesByName.values()) {
             idx.clear();
@@ -319,9 +378,36 @@ public class FileTableRepository implements TableRepository {
 
     private Object getRecordIdentifier(Row row, int index) {
         if (schema.hasPrimaryKey()) {
-            return row.get(schema.getPrimaryKeyColumn());
+            return castPkValue(row.get(schema.getPrimaryKeyColumn()));
         }
         return (long) index;
+    }
+
+    private Object castPkValue(Object pk) {
+        if (pk == null || !schema.hasPrimaryKey()) {
+            return null;
+        }
+        return castPkFast(pk);
+    }
+
+    private Object castPkFast(Object pk) {
+        DataType pkType = schema.getColumn(schema.getPrimaryKeyColumn()).getType();
+        return switch (pkType) {
+            case INT -> (pk instanceof Long) ? pk : pkType.cast(pk);
+            case DOUBLE -> (pk instanceof Double) ? pk : pkType.cast(pk);
+            case VARCHAR -> (pk instanceof String) ? pk : pkType.cast(pk);
+            case DATE -> (pk instanceof java.time.LocalDate) ? pk : pkType.cast(pk);
+            case BOOLEAN -> (pk instanceof Boolean) ? pk : pkType.cast(pk);
+        };
+    }
+
+    private void normalizeRow(Row row) {
+        for (Column col : schema.getColumns()) {
+            if (row.has(col.getName())) {
+                Object val = row.get(col.getName());
+                row.set(col.getName(), val == null ? null : col.getType().cast(val));
+            }
+        }
     }
 
     private void validateRow(Row row) {
@@ -342,7 +428,8 @@ public class FileTableRepository implements TableRepository {
         if (pkVal == null) {
             throw new IllegalArgumentException("Primary key column '" + pkCol + "' cannot be null");
         }
-        if (primaryKeyIndex.containsKey(pkVal)) {
+        Object castPk = castPkValue(pkVal);
+        if (primaryKeyIndex.containsKey(castPk)) {
             throw new IllegalArgumentException("Primary key violation: Key " + pkVal + " already exists in table " + schema.getTableName());
         }
     }

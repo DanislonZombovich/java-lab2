@@ -13,46 +13,61 @@ public class SqlParser {
     private final List<Token> tokens;
     private int index;
 
+    /**
+     * Constructs a SQL parser for the given query text.
+     *
+     * @param sql raw SQL statement string
+     */
     public SqlParser(String sql) {
         SqlLexer lexer = new SqlLexer(sql);
         this.tokens = lexer.tokenize();
         this.index = 0;
     }
 
+    /**
+     * Parses a single SQL statement and ensures no unexpected trailing tokens remain.
+     *
+     * @return parsed AST {@link Statement}
+     */
     public Statement parse() {
+        Statement stmt = parseStatement();
+        match(TokenType.SEMICOLON);
+        if (!check(TokenType.EOF)) {
+            throw new IllegalArgumentException("Unexpected trailing token at position " + peek().getPosition() + ": " + peek().getValue());
+        }
+        return stmt;
+    }
+
+    private Statement parseStatement() {
         if (check(TokenType.EOF)) {
             throw new IllegalArgumentException("Empty SQL query");
         }
 
-        Statement stmt;
         if (matchKeyword("EXPLAIN")) {
-            stmt = parseExplain();
+            return parseExplain();
         } else if (matchKeyword("CREATE")) {
-            stmt = parseCreate();
+            return parseCreate();
         } else if (matchKeyword("DROP")) {
-            stmt = parseDrop();
+            return parseDrop();
         } else if (matchKeyword("INSERT")) {
-            stmt = parseInsert();
+            return parseInsert();
         } else if (matchKeyword("SELECT")) {
-            stmt = parseSelect();
+            return parseSelect();
         } else if (matchKeyword("UPDATE")) {
-            stmt = parseUpdate();
+            return parseUpdate();
         } else if (matchKeyword("DELETE")) {
-            stmt = parseDelete();
+            return parseDelete();
         } else if (matchKeyword("SHOW")) {
-            stmt = parseShow();
+            return parseShow();
         } else if (matchKeyword("DESCRIBE") || matchKeyword("DESC")) {
-            stmt = parseDescribe();
+            return parseDescribe();
         } else {
             throw new IllegalArgumentException("Unrecognized SQL statement starting with: " + peek().getValue());
         }
-
-        match(TokenType.SEMICOLON);
-        return stmt;
     }
 
     private Statement parseExplain() {
-        Statement inner = parse();
+        Statement inner = parseStatement();
         return new ExplainStatement(inner);
     }
 
@@ -105,6 +120,14 @@ public class SqlParser {
             String colName = consumeIdentifierOrKeyword();
             String typeName = consumeIdentifierOrKeyword();
             DataType type = DataType.fromString(typeName);
+
+            if (match(TokenType.LPAREN)) {
+                consume(TokenType.NUMBER_LITERAL, "Expected type length or precision");
+                if (match(TokenType.COMMA)) {
+                    consume(TokenType.NUMBER_LITERAL, "Expected type scale");
+                }
+                consume(TokenType.RPAREN, "Expected ')' after type length");
+            }
 
             boolean primaryKey = false;
             boolean notNull = false;
@@ -229,7 +252,10 @@ public class SqlParser {
         Map<String, String> updates = new LinkedHashMap<>();
         while (!check(TokenType.EOF)) {
             String col = consumeIdentifierOrKeyword();
-            consume(TokenType.OPERATOR, "=");
+            Token eqToken = consume(TokenType.OPERATOR, "Expected '=' in SET clause");
+            if (!"=".equals(eqToken.getValue())) {
+                throw new IllegalArgumentException("Expected '=' in SET clause at position " + eqToken.getPosition() + ", found: " + eqToken.getValue());
+            }
             String val = consumeLiteralOrWord();
             updates.put(col, val);
 
@@ -278,25 +304,46 @@ public class SqlParser {
     }
 
     private Condition parseCondition() {
-        Condition left = parseSimpleCondition();
+        return parseOrExpression();
+    }
 
-        while (true) {
-            if (matchKeyword("AND")) {
-                Condition right = parseSimpleCondition();
-                left = new Condition(left, Condition.LogicalConnector.AND, right);
-            } else if (matchKeyword("OR")) {
-                Condition right = parseSimpleCondition();
-                left = new Condition(left, Condition.LogicalConnector.OR, right);
-            } else {
-                break;
-            }
+    private Condition parseOrExpression() {
+        Condition left = parseAndExpression();
+        while (matchKeyword("OR")) {
+            Condition right = parseAndExpression();
+            left = new Condition(left, Condition.LogicalConnector.OR, right);
         }
-
         return left;
+    }
+
+    private Condition parseAndExpression() {
+        Condition left = parsePrimaryCondition();
+        while (matchKeyword("AND")) {
+            Condition right = parsePrimaryCondition();
+            left = new Condition(left, Condition.LogicalConnector.AND, right);
+        }
+        return left;
+    }
+
+    private Condition parsePrimaryCondition() {
+        if (match(TokenType.LPAREN)) {
+            Condition inner = parseOrExpression();
+            consume(TokenType.RPAREN, "Expected ')' after parenthesized condition");
+            return inner;
+        }
+        return parseSimpleCondition();
     }
 
     private Condition parseSimpleCondition() {
         String columnName = consumeIdentifierOrKeyword();
+        if (matchKeyword("IS")) {
+            if (matchKeyword("NOT")) {
+                consumeKeyword("NULL");
+                return new Condition(columnName, ComparisonOperator.NOT_EQUALS, null);
+            }
+            consumeKeyword("NULL");
+            return new Condition(columnName, ComparisonOperator.EQUALS, null);
+        }
         Token opToken = consume(TokenType.OPERATOR, "Expected comparison operator");
         ComparisonOperator op = ComparisonOperator.fromString(opToken.getValue());
         String literal = consumeLiteralOrWord();

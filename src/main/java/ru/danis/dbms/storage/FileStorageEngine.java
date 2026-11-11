@@ -31,6 +31,11 @@ public class FileStorageEngine implements StorageEngine {
     private final ObjectMapper mapper;
     private final AtomicLong walSequence = new AtomicLong(0);
 
+    /**
+     * Creates a file storage engine rooted at the specified directory.
+     *
+     * @param baseDirectory root data directory
+     */
     public FileStorageEngine(Path baseDirectory) {
         this.baseDirectory = Objects.requireNonNull(baseDirectory, "baseDirectory cannot be null");
         this.tablesDirectory = baseDirectory.resolve("tables");
@@ -49,12 +54,25 @@ public class FileStorageEngine implements StorageEngine {
         Files.createDirectories(tablesDirectory);
         Files.createDirectories(indexesDirectory);
         Files.createDirectories(walDirectory);
+        cleanupTempFiles(tablesDirectory);
+        cleanupTempFiles(indexesDirectory);
         if (!Files.exists(walFile)) {
             Files.createFile(walFile);
         } else {
             List<WalEntry> existing = readWalEntries();
             if (!existing.isEmpty()) {
                 walSequence.set(existing.get(existing.size() - 1).getSequenceNumber() + 1);
+            }
+        }
+    }
+
+    private void cleanupTempFiles(Path directory) throws IOException {
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try (var stream = Files.list(directory)) {
+            for (Path path : stream.filter(p -> p.getFileName().toString().contains(".tmp.")).toList()) {
+                Files.deleteIfExists(path);
             }
         }
     }
@@ -90,7 +108,7 @@ public class FileStorageEngine implements StorageEngine {
             return new ArrayList<>();
         }
 
-        List<Map<String, Object>> rawRows = mapper.readValue(dataTarget.toFile(), new TypeReference<List<Map<String, Object>>>() {});
+        List<Map<String, Object>> rawRows = mapper.readValue(dataTarget.toFile(), new TypeReference<>() {});
         List<Row> result = new ArrayList<>(rawRows.size());
 
         for (Map<String, Object> rawMap : rawRows) {
@@ -176,21 +194,24 @@ public class FileStorageEngine implements StorageEngine {
             return null;
         }
 
-        Map<String, Object> data = mapper.readValue(target.toFile(), new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> data = mapper.readValue(target.toFile(), new TypeReference<>() {});
         String name = (String) data.get("name");
         String col = (String) data.get("columnName");
         DataType type = DataType.valueOf((String) data.get("keyType"));
         DataType idType = data.containsKey("idType") ? DataType.valueOf((String) data.get("idType")) : DataType.INT;
 
         BTreeIndex index = new BTreeIndex(name, tableName, col, type);
-        List<Map<String, Object>> entriesList = (List<Map<String, Object>>) data.get("entries");
+        List<Map<String, Object>> entriesList = mapper.convertValue(
+                data.get("entries"),
+                new TypeReference<List<Map<String, Object>>>() {}
+        );
 
-        NavigableMap<Comparable<?>, List<Object>> map = new TreeMap<>((a, b) -> type.compareValues(a, b));
+        NavigableMap<Comparable<?>, List<Object>> map = new TreeMap<>(type::compareValues);
         if (entriesList != null) {
             for (Map<String, Object> node : entriesList) {
                 Object rawKey = node.get("key");
                 Comparable<?> castKey = (Comparable<?>) type.cast(rawKey);
-                List<Object> rawIds = (List<Object>) node.get("ids");
+                List<Object> rawIds = mapper.convertValue(node.get("ids"), new TypeReference<List<Object>>() {});
                 List<Object> normalizedIds = new ArrayList<>();
                 if (rawIds != null) {
                     for (Object id : rawIds) {
@@ -231,7 +252,7 @@ public class FileStorageEngine implements StorageEngine {
             stream.filter(p -> p.getFileName().toString().startsWith(prefix) && p.getFileName().toString().endsWith(".idx.json"))
                   .forEach(p -> {
                       try {
-                          Map<String, Object> data = mapper.readValue(p.toFile(), new TypeReference<Map<String, Object>>() {});
+                          Map<String, Object> data = mapper.readValue(p.toFile(), new TypeReference<>() {});
                           String actualTable = (String) data.get("tableName");
                           if (actualTable != null && actualTable.equalsIgnoreCase(tableName)) {
                               String idxName = (String) data.get("name");
@@ -254,7 +275,7 @@ public class FileStorageEngine implements StorageEngine {
 
     @Override
     public synchronized void checkpoint() throws IOException {
-        Files.writeString(walFile, "", StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+        Files.writeString(walFile, "", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
     @Override
@@ -282,7 +303,11 @@ public class FileStorageEngine implements StorageEngine {
         Path tempFile = targetFile.resolveSibling(targetFile.getFileName() + ".tmp." + System.nanoTime());
         try {
             mapper.writeValue(tempFile.toFile(), data);
-            Files.move(tempFile, targetFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(tempFile, targetFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tempFile, targetFile, StandardCopyOption.REPLACE_EXISTING);
+            }
         } finally {
             Files.deleteIfExists(tempFile);
         }

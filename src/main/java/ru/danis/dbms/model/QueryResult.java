@@ -33,6 +33,15 @@ public class QueryResult {
         this.message = message;
     }
 
+    /**
+     * Creates a QueryResult for a SELECT query.
+     *
+     * @param columns         projected column names
+     * @param rows            result rows
+     * @param executionTimeNs execution time in nanoseconds
+     * @param executionPlan   plan description
+     * @return QueryResult instance
+     */
     public static QueryResult forSelect(List<String> columns, List<Row> rows, long executionTimeNs, String executionPlan) {
         return new QueryResult(
                 true,
@@ -45,6 +54,14 @@ public class QueryResult {
         );
     }
 
+    /**
+     * Creates a QueryResult for a DDL or DML mutation statement.
+     *
+     * @param rowsAffected    number of modified rows
+     * @param executionTimeNs execution time in nanoseconds
+     * @param message         status message
+     * @return QueryResult instance
+     */
     public static QueryResult forMutation(int rowsAffected, long executionTimeNs, String message) {
         return new QueryResult(
                 false,
@@ -57,6 +74,13 @@ public class QueryResult {
         );
     }
 
+    /**
+     * Creates a QueryResult for an EXPLAIN statement.
+     *
+     * @param plan            formatted execution plan
+     * @param executionTimeNs execution time in nanoseconds
+     * @return QueryResult instance
+     */
     public static QueryResult forExplain(String plan, long executionTimeNs) {
         Row planRow = new Row();
         planRow.set("PLAN", plan);
@@ -71,34 +95,74 @@ public class QueryResult {
         );
     }
 
+    /**
+     * Returns whether this result represents tabular rows from a SELECT-like query.
+     *
+     * @return true if result contains tabular rows
+     */
     public boolean isSelect() {
         return select;
     }
 
+    /**
+     * Returns projected column names in order.
+     *
+     * @return projected column names
+     */
     public List<String> getColumnNames() {
         return columnNames;
     }
 
+    /**
+     * Returns result rows.
+     *
+     * @return result rows
+     */
     public List<Row> getRows() {
         return rows;
     }
 
+    /**
+     * Returns the count of affected or returned rows.
+     *
+     * @return count of affected or returned rows
+     */
     public int getRowsAffected() {
         return rowsAffected;
     }
 
+    /**
+     * Returns elapsed execution time in nanoseconds.
+     *
+     * @return elapsed time in nanoseconds
+     */
     public long getExecutionTimeNs() {
         return executionTimeNs;
     }
 
+    /**
+     * Returns elapsed execution time in milliseconds.
+     *
+     * @return elapsed time in milliseconds
+     */
     public double getExecutionTimeMs() {
         return executionTimeNs / 1_000_000.0;
     }
 
+    /**
+     * Returns the chosen execution plan description, if available.
+     *
+     * @return execution plan description or null
+     */
     public String getExecutionPlan() {
         return executionPlan;
     }
 
+    /**
+     * Returns a human-readable execution status message.
+     *
+     * @return human-readable execution message
+     */
     public String getMessage() {
         return message;
     }

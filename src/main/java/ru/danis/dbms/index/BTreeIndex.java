@@ -18,6 +18,14 @@ public class BTreeIndex implements Index {
     private BTreeNode root;
     private int size;
 
+    /**
+     * Creates a B-Tree index for a table column.
+     *
+     * @param name        index name
+     * @param tableName   table name
+     * @param columnName  indexed column name
+     * @param indexedType data type of indexed keys
+     */
     public BTreeIndex(String name, String tableName, String columnName, DataType indexedType) {
         this.name = Objects.requireNonNull(name, "name cannot be null");
         this.tableName = Objects.requireNonNull(tableName, "tableName cannot be null");
@@ -55,19 +63,22 @@ public class BTreeIndex implements Index {
         Comparable<?> key = (Comparable<?>) indexedType.cast(rawKey);
 
         BTreeNode r = root;
+        boolean added;
         if (r.keys.size() == 2 * DEGREE - 1) {
             BTreeNode s = new BTreeNode(false);
             root = s;
             s.children.add(r);
             splitChild(s, 0, r);
-            insertNonFull(s, key, recordId);
+            added = insertNonFull(s, key, recordId);
         } else {
-            insertNonFull(r, key, recordId);
+            added = insertNonFull(r, key, recordId);
         }
-        size++;
+        if (added) {
+            size++;
+        }
     }
 
-    private void insertNonFull(BTreeNode node, Comparable<?> key, Object recordId) {
+    private boolean insertNonFull(BTreeNode node, Comparable<?> key, Object recordId) {
         int i = node.keys.size() - 1;
 
         if (node.isLeaf) {
@@ -78,13 +89,15 @@ public class BTreeIndex implements Index {
                 List<Object> ids = node.values.get(i);
                 if (!ids.contains(recordId)) {
                     ids.add(recordId);
+                    return true;
                 }
-                return;
+                return false;
             }
             node.keys.add(i + 1, key);
             List<Object> ids = new ArrayList<>();
             ids.add(recordId);
             node.values.add(i + 1, ids);
+            return true;
         } else {
             while (i >= 0 && compare(key, node.keys.get(i)) < 0) {
                 i--;
@@ -93,8 +106,9 @@ public class BTreeIndex implements Index {
                 List<Object> ids = node.values.get(i);
                 if (!ids.contains(recordId)) {
                     ids.add(recordId);
+                    return true;
                 }
-                return;
+                return false;
             }
             i++;
             BTreeNode child = node.children.get(i);
@@ -106,11 +120,12 @@ public class BTreeIndex implements Index {
                     List<Object> ids = node.values.get(i);
                     if (!ids.contains(recordId)) {
                         ids.add(recordId);
+                        return true;
                     }
-                    return;
+                    return false;
                 }
             }
-            insertNonFull(node.children.get(i), key, recordId);
+            return insertNonFull(node.children.get(i), key, recordId);
         }
     }
 
@@ -153,21 +168,25 @@ public class BTreeIndex implements Index {
             return Collections.emptyList();
         }
         Comparable<?> key = (Comparable<?>) indexedType.cast(rawKey);
-        return searchInNode(root, key);
+        List<Object> found = findValueList(root, key);
+        if (found == null) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(new ArrayList<>(found));
     }
 
-    private List<Object> searchInNode(BTreeNode node, Comparable<?> key) {
+    private List<Object> findValueList(BTreeNode node, Comparable<?> key) {
         int i = 0;
         while (i < node.keys.size() && compare(key, node.keys.get(i)) > 0) {
             i++;
         }
         if (i < node.keys.size() && compare(key, node.keys.get(i)) == 0) {
-            return Collections.unmodifiableList(new ArrayList<>(node.values.get(i)));
+            return node.values.get(i);
         }
         if (node.isLeaf) {
-            return Collections.emptyList();
+            return null;
         }
-        return searchInNode(node.children.get(i), key);
+        return findValueList(node.children.get(i), key);
     }
 
     @Override
@@ -203,7 +222,7 @@ public class BTreeIndex implements Index {
             }
         }
 
-        if (!node.isLeaf) {
+        if (!node.isLeaf && !node.keys.isEmpty()) {
             Comparable<?> lastKey = node.keys.get(node.keys.size() - 1);
             if (max == null || compare(lastKey, max) <= 0) {
                 collectRange(node.children.get(node.keys.size()), min, max, includeMin, includeMax, acc);
@@ -217,14 +236,135 @@ public class BTreeIndex implements Index {
             return;
         }
         Comparable<?> key = (Comparable<?>) indexedType.cast(rawKey);
-        NavigableMap<Comparable<?>, List<Object>> map = getEntries();
-        List<Object> list = map.get(key);
-        if (list != null && list.remove(recordId)) {
-            if (list.isEmpty()) {
-                map.remove(key);
-            }
-            loadEntries(map);
+        List<Object> ids = findValueList(root, key);
+        if (ids == null || !ids.remove(recordId)) {
+            return;
         }
+        size--;
+        if (!ids.isEmpty()) {
+            return;
+        }
+
+        removeKey(root, key);
+        if (root.keys.isEmpty() && !root.isLeaf) {
+            root = root.children.get(0);
+        }
+    }
+
+    private void removeKey(BTreeNode node, Comparable<?> key) {
+        int idx = 0;
+        while (idx < node.keys.size() && compare(key, node.keys.get(idx)) > 0) {
+            idx++;
+        }
+
+        if (idx < node.keys.size() && compare(key, node.keys.get(idx)) == 0) {
+            if (node.isLeaf) {
+                node.keys.remove(idx);
+                node.values.remove(idx);
+            } else {
+                BTreeNode predChild = node.children.get(idx);
+                BTreeNode succChild = node.children.get(idx + 1);
+                if (predChild.keys.size() >= DEGREE) {
+                    BTreeNode cur = predChild;
+                    while (!cur.isLeaf) {
+                        cur = cur.children.get(cur.children.size() - 1);
+                    }
+                    int last = cur.keys.size() - 1;
+                    Comparable<?> predKey = cur.keys.get(last);
+                    List<Object> predVal = cur.values.get(last);
+                    node.keys.set(idx, predKey);
+                    node.values.set(idx, predVal);
+                    removeKey(predChild, predKey);
+                } else if (succChild.keys.size() >= DEGREE) {
+                    BTreeNode cur = succChild;
+                    while (!cur.isLeaf) {
+                        cur = cur.children.get(0);
+                    }
+                    Comparable<?> succKey = cur.keys.get(0);
+                    List<Object> succVal = cur.values.get(0);
+                    node.keys.set(idx, succKey);
+                    node.values.set(idx, succVal);
+                    removeKey(succChild, succKey);
+                } else {
+                    merge(node, idx);
+                    removeKey(predChild, key);
+                }
+            }
+            return;
+        }
+
+        if (node.isLeaf) {
+            return;
+        }
+
+        boolean isLastChild = (idx == node.keys.size());
+        if (node.children.get(idx).keys.size() < DEGREE) {
+            fill(node, idx);
+        }
+
+        if (isLastChild && idx > node.keys.size()) {
+            removeKey(node.children.get(idx - 1), key);
+        } else {
+            removeKey(node.children.get(idx), key);
+        }
+    }
+
+    private void fill(BTreeNode node, int idx) {
+        if (idx > 0 && node.children.get(idx - 1).keys.size() >= DEGREE) {
+            borrowFromPrev(node, idx);
+        } else if (idx < node.keys.size() && node.children.get(idx + 1).keys.size() >= DEGREE) {
+            borrowFromNext(node, idx);
+        } else {
+            if (idx < node.keys.size()) {
+                merge(node, idx);
+            } else {
+                merge(node, idx - 1);
+            }
+        }
+    }
+
+    private void borrowFromPrev(BTreeNode node, int idx) {
+        BTreeNode child = node.children.get(idx);
+        BTreeNode sibling = node.children.get(idx - 1);
+
+        child.keys.add(0, node.keys.get(idx - 1));
+        child.values.add(0, node.values.get(idx - 1));
+        if (!child.isLeaf) {
+            child.children.add(0, sibling.children.remove(sibling.children.size() - 1));
+        }
+
+        int last = sibling.keys.size() - 1;
+        node.keys.set(idx - 1, sibling.keys.remove(last));
+        node.values.set(idx - 1, sibling.values.remove(last));
+    }
+
+    private void borrowFromNext(BTreeNode node, int idx) {
+        BTreeNode child = node.children.get(idx);
+        BTreeNode sibling = node.children.get(idx + 1);
+
+        child.keys.add(node.keys.get(idx));
+        child.values.add(node.values.get(idx));
+        if (!child.isLeaf) {
+            child.children.add(sibling.children.remove(0));
+        }
+
+        node.keys.set(idx, sibling.keys.remove(0));
+        node.values.set(idx, sibling.values.remove(0));
+    }
+
+    private void merge(BTreeNode node, int idx) {
+        BTreeNode child = node.children.get(idx);
+        BTreeNode sibling = node.children.get(idx + 1);
+
+        child.keys.add(node.keys.remove(idx));
+        child.values.add(node.values.remove(idx));
+        child.keys.addAll(sibling.keys);
+        child.values.addAll(sibling.values);
+        if (!child.isLeaf) {
+            child.children.addAll(sibling.children);
+        }
+
+        node.children.remove(idx + 1);
     }
 
     @Override

@@ -18,6 +18,12 @@ public class SeqScanPlan implements ExecutionPlan {
     private final TableRepository repository;
     private final Condition condition;
 
+    /**
+     * Creates a sequential scan execution plan.
+     *
+     * @param repository table repository to scan
+     * @param condition optional filter condition, or null to return all rows
+     */
     public SeqScanPlan(TableRepository repository, Condition condition) {
         this.repository = Objects.requireNonNull(repository, "repository cannot be null");
         this.condition = condition;

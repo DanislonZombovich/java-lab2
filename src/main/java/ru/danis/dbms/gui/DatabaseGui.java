@@ -13,6 +13,9 @@ import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -20,15 +23,27 @@ import java.util.List;
  */
 public class DatabaseGui extends JFrame {
 
+    /** Query engine used for statement execution. */
     private final QueryEngine engine;
+    /** Database repository backing schema inspection. */
     private final DatabaseRepository repository;
 
+    /** SQL editor input component. */
     private JTextArea queryArea;
+    /** Result display table component. */
     private JTable resultTable;
+    /** Backing Swing model for result table rows. */
     private DefaultTableModel tableModel;
+    /** Status bar displaying execution metrics or errors. */
     private JLabel statusLabel;
+    /** Hierarchical database schema tree view. */
     private JTree schemaTree;
 
+    /**
+     * Constructs and initializes the DBMS Swing management window.
+     *
+     * @param engine query execution engine used to evaluate SQL statements
+     */
     public DatabaseGui(QueryEngine engine) {
         this.engine = engine;
         this.repository = engine.getDatabaseRepository();
@@ -38,6 +53,16 @@ public class DatabaseGui extends JFrame {
         setMinimumSize(new Dimension(800, 500));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                try {
+                    repository.close();
+                } catch (IOException ex) {
+                    System.err.println("Error while closing repository: " + ex.getMessage());
+                }
+            }
+        });
 
         initUi();
         refreshSchemaTree();
@@ -100,6 +125,9 @@ public class DatabaseGui extends JFrame {
         JButton explainBtn = new JButton("Explain");
         explainBtn.addActionListener(e -> {
             String q = queryArea.getText().trim();
+            if (q.isEmpty()) {
+                return;
+            }
             if (!q.toLowerCase().startsWith("explain")) {
                 queryArea.setText("EXPLAIN " + q);
             }
@@ -241,9 +269,13 @@ public class DatabaseGui extends JFrame {
             engine.execute("CREATE TABLE IF NOT EXISTS manufacturers (id INT PRIMARY KEY, name VARCHAR, country VARCHAR);");
             engine.execute("CREATE TABLE IF NOT EXISTS cars (id INT PRIMARY KEY, brand VARCHAR, price DOUBLE, is_available BOOLEAN, created_at DATE, manufacturer_id INT REFERENCES manufacturers(id));");
 
-            engine.execute("INSERT INTO manufacturers (id, name, country) VALUES (1, 'Toyota Motor Corp', 'Japan'), (2, 'Bayerische Motoren Werke AG', 'Germany');");
-            engine.execute("INSERT INTO cars VALUES (1, 'Toyota', 25000.0, TRUE, '2024-01-15', 1);");
-            engine.execute("INSERT INTO cars (id, brand, price, is_available, manufacturer_id) VALUES (2, 'BMW', 35000.0, TRUE, 2);");
+            if (repository.getTable("manufacturers").count() == 0) {
+                engine.execute("INSERT INTO manufacturers (id, name, country) VALUES (1, 'Toyota Motor Corp', 'Japan'), (2, 'Bayerische Motoren Werke AG', 'Germany');");
+            }
+            if (repository.getTable("cars").count() == 0) {
+                engine.execute("INSERT INTO cars VALUES (1, 'Toyota', 25000.0, TRUE, '2024-01-15', 1);");
+                engine.execute("INSERT INTO cars (id, brand, price, is_available, manufacturer_id) VALUES (2, 'BMW', 35000.0, TRUE, 2);");
+            }
 
             engine.execute("CREATE INDEX IF NOT EXISTS idx_cars_brand ON cars (brand);");
             JOptionPane.showMessageDialog(this, "Sample database schema and records initialized successfully!", "Demo Loaded", JOptionPane.INFORMATION_MESSAGE);

@@ -33,8 +33,8 @@ public class QueryEngineTest {
     }
 
     @Test
-    @DisplayName("Execute full suite of prompt example SQL statements")
-    void testPromptSpecificationQueries() {
+    @DisplayName("Execute core SQL CRUD statements")
+    void testCoreSqlCrudStatements() {
         QueryResult r1 = engine.execute("INSERT INTO cars VALUES (1, 'Toyota', 25000.0, TRUE);");
         assertEquals(1, r1.getRowsAffected());
 

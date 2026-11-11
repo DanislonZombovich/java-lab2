@@ -8,10 +8,15 @@ import java.time.format.DateTimeParseException;
  * Enumeration of supported database column data types.
  */
 public enum DataType {
+    /** Signed 64-bit integer type. */
     INT,
+    /** Double-precision floating-point type. */
     DOUBLE,
+    /** Variable-length character string type. */
     VARCHAR,
+    /** Calendar date type in ISO-8601 format (YYYY-MM-DD). */
     DATE,
+    /** Boolean logical type (true/false). */
     BOOLEAN;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -95,17 +100,20 @@ public enum DataType {
         if (value == null) {
             return null;
         }
-        if (value instanceof String str) {
-            return parse(str);
-        }
         return switch (this) {
             case INT -> {
+                if (value instanceof Long l) {
+                    yield l;
+                }
                 if (value instanceof Number n) {
                     yield n.longValue();
                 }
                 yield parse(value.toString());
             }
             case DOUBLE -> {
+                if (value instanceof Double d) {
+                    yield d;
+                }
                 if (value instanceof Number n) {
                     yield n.doubleValue();
                 }
@@ -134,7 +142,7 @@ public enum DataType {
      * @param o2 second object
      * @return comparison result (-1, 0, 1)
      */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public int compareValues(Object o1, Object o2) {
         if (o1 == null && o2 == null) {
             return 0;
@@ -144,6 +152,34 @@ public enum DataType {
         }
         if (o2 == null) {
             return 1;
+        }
+
+        switch (this) {
+            case INT -> {
+                if (o1 instanceof Long l1 && o2 instanceof Long l2) {
+                    return Long.compare(l1, l2);
+                }
+            }
+            case DOUBLE -> {
+                if (o1 instanceof Double d1 && o2 instanceof Double d2) {
+                    return Double.compare(d1, d2);
+                }
+            }
+            case VARCHAR -> {
+                if (o1 instanceof String s1 && o2 instanceof String s2) {
+                    return s1.compareTo(s2);
+                }
+            }
+            case DATE -> {
+                if (o1 instanceof LocalDate d1 && o2 instanceof LocalDate d2) {
+                    return d1.compareTo(d2);
+                }
+            }
+            case BOOLEAN -> {
+                if (o1 instanceof Boolean b1 && o2 instanceof Boolean b2) {
+                    return Boolean.compare(b1, b2);
+                }
+            }
         }
 
         Object c1 = cast(o1);

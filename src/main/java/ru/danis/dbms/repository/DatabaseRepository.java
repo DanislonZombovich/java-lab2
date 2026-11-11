@@ -17,13 +17,26 @@ public class DatabaseRepository {
     private final StorageEngine storageEngine;
     private final Map<String, TableRepository> tables;
 
+    /**
+     * Creates a database coordinator over the given storage engine.
+     *
+     * @param storageEngine persistence engine
+     */
     public DatabaseRepository(StorageEngine storageEngine) {
         this.storageEngine = Objects.requireNonNull(storageEngine, "storageEngine cannot be null");
         this.tables = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
     }
 
+    /**
+     * Initializes storage, loads schemas/rows/indexes, and reconciles indexes after unclean shutdown.
+     *
+     * @throws IOException if storage loading fails
+     */
     public synchronized void initialize() throws IOException {
         storageEngine.initialize();
+        List<ru.danis.dbms.storage.WalEntry> pendingWal = storageEngine.readWalEntries();
+        boolean hasPendingWal = !pendingWal.isEmpty();
+
         List<String> tableNames = storageEngine.listTables();
 
         for (String tbl : tableNames) {
@@ -38,15 +51,32 @@ public class DatabaseRepository {
                     }
                 }
                 FileTableRepository repo = new FileTableRepository(schema, storageEngine, rows, indexes);
+                repo.reconcileIndexes(hasPendingWal);
                 tables.put(schema.getTableName(), repo);
             }
         }
+
+        if (hasPendingWal) {
+            storageEngine.checkpoint();
+        }
     }
 
+    /**
+     * Checks if a table exists.
+     *
+     * @param tableName table name
+     * @return true if present
+     */
     public synchronized boolean hasTable(String tableName) {
         return tables.containsKey(tableName);
     }
 
+    /**
+     * Retrieves a table repository or throws if absent.
+     *
+     * @param tableName table name
+     * @return TableRepository instance
+     */
     public synchronized TableRepository getTable(String tableName) {
         TableRepository repo = tables.get(tableName);
         if (repo == null) {
@@ -55,10 +85,21 @@ public class DatabaseRepository {
         return repo;
     }
 
+    /**
+     * Returns a list of all registered table names.
+     *
+     * @return list of registered table names
+     */
     public synchronized List<String> getTableNames() {
         return new ArrayList<>(tables.keySet());
     }
 
+    /**
+     * Creates a new table and persists its empty state.
+     *
+     * @param schema table schema definition
+     * @throws IOException if disk persistence fails
+     */
     public synchronized void createTable(TableSchema schema) throws IOException {
         String name = schema.getTableName();
         if (hasTable(name)) {
@@ -79,13 +120,19 @@ public class DatabaseRepository {
         }
 
         FileTableRepository repo = new FileTableRepository(schema, storageEngine, Collections.emptyList(), Collections.emptyList());
+        storageEngine.appendWal("CREATE_TABLE", name, schema.toString());
         tables.put(name, repo);
         storageEngine.saveTable(schema, Collections.emptyList());
-        storageEngine.appendWal("CREATE_TABLE", name, schema.toString());
     }
 
+    /**
+     * Drops an existing table if no child table references it.
+     *
+     * @param tableName table name
+     * @throws IOException if disk cleanup fails
+     */
     public synchronized void dropTable(String tableName) throws IOException {
-        TableRepository target = getTable(tableName);
+        getTable(tableName);
 
         for (Map.Entry<String, TableRepository> entry : tables.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(tableName)) {
@@ -99,11 +146,19 @@ public class DatabaseRepository {
             }
         }
 
+        storageEngine.appendWal("DROP_TABLE", tableName, "DROPPED");
         tables.remove(tableName);
         storageEngine.dropTable(tableName);
-        storageEngine.appendWal("DROP_TABLE", tableName, "DROPPED");
     }
 
+    /**
+     * Creates and persists a B-Tree index on a table column.
+     *
+     * @param indexName  unique index name
+     * @param tableName  target table name
+     * @param columnName target column name
+     * @throws IOException if persistence fails
+     */
     public synchronized void createIndex(String indexName, String tableName, String columnName) throws IOException {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
@@ -116,16 +171,22 @@ public class DatabaseRepository {
 
         Column col = schema.getColumn(columnName);
         Index index = new BTreeIndex(indexName, tableName, col.getName(), col.getType());
-        repo.addIndex(index);
         storageEngine.appendWal("CREATE_INDEX", tableName, indexName + " ON (" + columnName + ")");
+        repo.addIndex(index);
     }
 
+    /**
+     * Drops an index by name across registered tables.
+     *
+     * @param indexName index name
+     * @throws IOException if disk cleanup fails
+     */
     public synchronized void dropIndex(String indexName) throws IOException {
         boolean found = false;
         for (TableRepository repo : tables.values()) {
             if (repo.getIndex(indexName) != null) {
-                repo.removeIndex(indexName);
                 storageEngine.appendWal("DROP_INDEX", repo.getSchema().getTableName(), indexName);
+                repo.removeIndex(indexName);
                 found = true;
                 break;
             }
@@ -135,6 +196,12 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Validates foreign key references before inserting a row.
+     *
+     * @param tableName target table name
+     * @param row       row being inserted
+     */
     public synchronized void validateForeignKeysOnInsert(String tableName, Row row) {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
@@ -170,9 +237,19 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Validates foreign key integrity for both child references and parent mutations on update.
+     *
+     * @param tableName target table name
+     * @param condition filter predicate or null
+     * @param newValues proposed column updates
+     */
     public synchronized void validateForeignKeysOnUpdate(String tableName, Condition condition, Map<String, Object> newValues) {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
+
+        Map<String, Object> caseInsensitiveUpdates = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        caseInsensitiveUpdates.putAll(newValues);
 
         List<Row> matchingRows = new ArrayList<>();
         for (Row r : repo.findAll()) {
@@ -185,8 +262,8 @@ public class DatabaseRepository {
         }
 
         for (Column col : schema.getColumns()) {
-            if (col.hasForeignKey() && newValues.containsKey(col.getName())) {
-                Object rawVal = newValues.get(col.getName());
+            if (col.hasForeignKey() && caseInsensitiveUpdates.containsKey(col.getName())) {
+                Object rawVal = caseInsensitiveUpdates.get(col.getName());
                 if (rawVal != null) {
                     ForeignKey fk = col.getForeignKey();
                     TableRepository targetRepo = getTable(fk.getTargetTable());
@@ -222,13 +299,13 @@ public class DatabaseRepository {
             for (Column childCol : childSchema.getColumns()) {
                 if (childCol.hasForeignKey() && childCol.getForeignKey().getTargetTable().equalsIgnoreCase(tableName)) {
                     String referencedCol = childCol.getForeignKey().getTargetColumn();
-                    if (newValues.containsKey(referencedCol)) {
+                    if (caseInsensitiveUpdates.containsKey(referencedCol)) {
                         DataType refType = schema.getColumn(referencedCol).getType();
-                        Object newTargetVal = refType.cast(newValues.get(referencedCol));
+                        Object newTargetVal = refType.cast(caseInsensitiveUpdates.get(referencedCol));
 
                         for (Row parentRow : matchingRows) {
                             Object oldVal = parentRow.get(referencedCol);
-                            if (oldVal != null && refType.compareValues(oldVal, newTargetVal) != 0) {
+                            if (oldVal != null && (newTargetVal == null || refType.compareValues(oldVal, newTargetVal) != 0)) {
                                 for (Row childRow : childRepo.findAll()) {
                                     Object childVal = childRow.get(childCol.getName());
                                     if (childVal != null && refType.compareValues(oldVal, childVal) == 0) {
@@ -243,6 +320,12 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Validates that deleting matching rows will not violate child table foreign keys.
+     *
+     * @param tableName target table name
+     * @param condition filter predicate or null
+     */
     public synchronized void validateForeignKeysOnDelete(String tableName, Condition condition) {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
@@ -282,5 +365,14 @@ public class DatabaseRepository {
                 }
             }
         }
+    }
+
+    /**
+     * Performs a clean shutdown checkpoint on the underlying storage engine.
+     *
+     * @throws IOException if checkpoint fails
+     */
+    public synchronized void close() throws IOException {
+        storageEngine.close();
     }
 }

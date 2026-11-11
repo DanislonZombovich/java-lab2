@@ -15,6 +15,11 @@ public class RowIterator implements Iterator<Row>, AutoCloseable {
     private final int totalCount;
     private int cursor;
 
+    /**
+     * Creates a sequential row iterator over a row collection.
+     *
+     * @param rows rows to iterate
+     */
     public RowIterator(List<Row> rows) {
         Objects.requireNonNull(rows, "rows list cannot be null");
         this.internalIterator = rows.iterator();
@@ -33,10 +38,20 @@ public class RowIterator implements Iterator<Row>, AutoCloseable {
         return internalIterator.next();
     }
 
+    /**
+     * Returns the current zero-based cursor offset.
+     *
+     * @return current zero-based cursor offset
+     */
     public int getCursor() {
         return cursor;
     }
 
+    /**
+     * Returns the total number of rows covered by this iterator.
+     *
+     * @return total number of rows in the iterator
+     */
     public int getTotalCount() {
         return totalCount;
     }

@@ -13,7 +13,7 @@ public class SqlLexer {
             "WHERE", "UPDATE", "SET", "DELETE",
             "SHOW", "TABLES", "DESCRIBE", "EXPLAIN",
             "PRIMARY", "KEY", "REFERENCES", "IF", "NOT", "EXISTS",
-            "AND", "OR", "NULL",
+            "AND", "OR", "IS", "NULL",
             "INT", "INTEGER", "DOUBLE", "FLOAT", "VARCHAR", "TEXT", "DATE", "BOOLEAN"
     );
 
@@ -21,12 +21,22 @@ public class SqlLexer {
     private final int length;
     private int cursor;
 
+    /**
+     * Creates a lexer for the given SQL input string.
+     *
+     * @param source SQL query text
+     */
     public SqlLexer(String source) {
         this.source = source != null ? source : "";
         this.length = this.source.length();
         this.cursor = 0;
     }
 
+    /**
+     * Tokenizes the entire SQL source into a sequence terminated by EOF.
+     *
+     * @return list of parsed tokens
+     */
     public List<Token> tokenize() {
         List<Token> tokens = new ArrayList<>();
         while (cursor < length) {
@@ -34,6 +44,14 @@ public class SqlLexer {
 
             if (Character.isWhitespace(ch)) {
                 cursor++;
+                continue;
+            }
+
+            if (ch == '-' && peek() == '-') {
+                cursor += 2;
+                while (cursor < length && source.charAt(cursor) != '\n') {
+                    cursor++;
+                }
                 continue;
             }
 

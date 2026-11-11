@@ -17,12 +17,22 @@ public class ConsoleApp {
     private final InputStream in;
     private final PrintStream out;
 
+    /**
+     * Creates a console REPL bound to the given engine and I/O streams.
+     *
+     * @param engine query execution engine
+     * @param in input stream for commands
+     * @param out output stream for results and prompts
+     */
     public ConsoleApp(QueryEngine engine, InputStream in, PrintStream out) {
         this.engine = engine;
         this.in = in;
         this.out = out;
     }
 
+    /**
+     * Starts the interactive console read-eval-print loop.
+     */
     public void start() {
         printBanner();
         Scanner scanner = new Scanner(in);
@@ -45,32 +55,33 @@ public class ConsoleApp {
             }
 
             if (buffer.length() == 0) {
-                if (line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("quit")) {
+                String cmd = line.endsWith(";") ? line.substring(0, line.length() - 1).trim() : line;
+                if (cmd.equalsIgnoreCase("exit") || cmd.equalsIgnoreCase("quit")) {
                     out.println("Goodbye.");
                     break;
                 }
-                if (line.equalsIgnoreCase("help")) {
+                if (cmd.equalsIgnoreCase("help")) {
                     printHelp();
                     continue;
                 }
-                if (line.equalsIgnoreCase("tables")) {
+                if (cmd.equalsIgnoreCase("tables")) {
                     executeQuery("SHOW TABLES;");
                     continue;
                 }
-                if (line.equalsIgnoreCase("indexes")) {
+                if (cmd.equalsIgnoreCase("indexes")) {
                     executeQuery("SHOW INDEXES;");
                     continue;
                 }
-                if (line.toLowerCase().startsWith("schema ")) {
-                    String table = line.substring(7).trim().replace(";", "");
+                if (cmd.toLowerCase().startsWith("schema ")) {
+                    String table = cmd.substring(7).trim();
                     executeQuery("DESCRIBE " + table + ";");
                     continue;
                 }
-                if (line.equalsIgnoreCase("init-demo")) {
+                if (cmd.equalsIgnoreCase("init-demo")) {
                     initDemoData();
                     continue;
                 }
-                if (line.equalsIgnoreCase("benchmark")) {
+                if (cmd.equalsIgnoreCase("benchmark")) {
                     out.println("Running benchmark...");
                     BenchmarkRunner runner = new BenchmarkRunner(engine.getDatabaseRepository());
                     runner.runAndPrint(out);
@@ -96,15 +107,22 @@ public class ConsoleApp {
         }
     }
 
+    /**
+     * Creates sample manufacturers and cars tables with foreign keys, initial rows, and an index.
+     */
     public void initDemoData() {
         out.println("Initializing sample relational tables and demo data...");
         try {
             engine.execute("CREATE TABLE IF NOT EXISTS manufacturers (id INT PRIMARY KEY, name VARCHAR, country VARCHAR);");
             engine.execute("CREATE TABLE IF NOT EXISTS cars (id INT PRIMARY KEY, brand VARCHAR, price DOUBLE, is_available BOOLEAN, created_at DATE, manufacturer_id INT REFERENCES manufacturers(id));");
 
-            engine.execute("INSERT INTO manufacturers (id, name, country) VALUES (1, 'Toyota Motor Corp', 'Japan'), (2, 'Bayerische Motoren Werke AG', 'Germany');");
-            engine.execute("INSERT INTO cars VALUES (1, 'Toyota', 25000.0, TRUE, '2024-01-15', 1);");
-            engine.execute("INSERT INTO cars (id, brand, price, is_available, manufacturer_id) VALUES (2, 'BMW', 35000.0, TRUE, 2);");
+            if (engine.getDatabaseRepository().getTable("manufacturers").count() == 0) {
+                engine.execute("INSERT INTO manufacturers (id, name, country) VALUES (1, 'Toyota Motor Corp', 'Japan'), (2, 'Bayerische Motoren Werke AG', 'Germany');");
+            }
+            if (engine.getDatabaseRepository().getTable("cars").count() == 0) {
+                engine.execute("INSERT INTO cars VALUES (1, 'Toyota', 25000.0, TRUE, '2024-01-15', 1);");
+                engine.execute("INSERT INTO cars (id, brand, price, is_available, manufacturer_id) VALUES (2, 'BMW', 35000.0, TRUE, 2);");
+            }
 
             engine.execute("CREATE INDEX IF NOT EXISTS idx_cars_brand ON cars (brand);");
             out.println("Demo tables 'manufacturers' and 'cars' initialized with foreign key relation and index.");
@@ -118,8 +136,8 @@ public class ConsoleApp {
         out.println("                   Simple Relational DBMS (Java)                    ");
         out.println("  Features: B-Tree Indexes, Disk Persistence, SQL Parser, Foreign Keys");
         out.println("====================================================================");
-        out.println("Type 'help' for instructions, 'init-demo' to populate sample tables,");
-        out.println("or 'exit' to terminate.\n");
+        out.println("End SQL statements with ';'. Type 'help' for instructions,");
+        out.println("'init-demo' to populate sample tables, or 'exit' to terminate.\n");
     }
 
     private void printHelp() {

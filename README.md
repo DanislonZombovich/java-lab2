@@ -1,148 +1,78 @@
-# Реляционная СУБД на Java (Simple Relational DBMS)
+# Упрощенная реляционная СУБД на Java (Simple DBMS)
 
-Упрощенная система управления реляционными базами данных, разработанная на Java 21 / 17. Проект реализует структурированное дисковое хранение таблиц, проверку целостности внешних ключей, B-Tree индексирование, парсинг подмножества языка SQL, транзакционный журнал упреждающей записи (WAL), а также консольный (CLI) и графический (Swing GUI) интерфейсы.
-
----
-
-## Оглавление
-
-1. [Возможности системы](#возможности-системы)
-2. [Поддерживаемая схема данных и типы](#поддерживаемая-схема-данных-и-типы)
-3. [Архитектура системы](#архитектура-системы)
-   - [Паттерны проектирования](#паттерны-проектирования)
-   - [Диаграмма классов](#диаграмма-классов)
-   - [Диаграмма последовательности](#диаграмма-последовательности)
-4. [Подсистема хранения и надежность](#подсистема-хранения-и-надежность)
-5. [Алгоритм индексирования и оптимизация](#алгоритм-индексирования-и-оптимизация)
-6. [Результаты тестирования производительности](#результаты-тестирования-производительности)
-7. [Инструкция пользователя](#инструкция-пользователя)
-   - [Требования](#требования)
-   - [Сборка проекта](#сборка-проекта)
-   - [Запуск консольного интерфейса](#запуск-консольного-интерфейса)
-   - [Запуск графического интерфейса](#запуск-графического-интерфейса)
-   - [Запуск бенчмарка](#запуск-бенчмарка)
-   - [Примеры SQL-запросов](#примеры-sql-запросов)
-8. [Распределение обязанностей в команде](#распределение-обязанностей-в-команде)
-9. [Выводы](#выводы)
-10. [Список использованных источников](#список-использованных-источников)
+Лабораторная работа N2. Система управления базами данных на языке Java (стек Java 17, Jackson, JUnit 5, Maven) с хранением таблиц и индексов на диске, журналом предзаписи (WAL), SQL-подобным парсером, B-Tree индексацией, проверкой внешних ключей, консольным (CLI) и графическим (Swing) интерфейсами.
 
 ---
 
-## Возможности системы
+## Содержание
 
-- **Хранение связанных таблиц**: поддержка внешних ключей (`REFERENCES target_table(target_col)`) с валидацией ссылочной целостности при вставке, обновлении и удалении.
-- **5 типов данных**: `INT` (целое число), `DOUBLE` (число с плавающей точкой), `VARCHAR` (строка), `DATE` (дата формата YYYY-MM-DD), `BOOLEAN` (логическое значение true/false).
-- **Проверка первичного ключа**: контроль уникальности `PRIMARY KEY` за O(1) с блокировкой повторных вставок.
-- **Собственный SQL-парсер**: поддержка `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX`, `INSERT INTO`, `SELECT`, `UPDATE`, `DELETE`, `EXPLAIN`, `SHOW TABLES`, `DESCRIBE`.
-- **B-Tree индексирование**: сбалансированное дерево поиска с сохранением на диск в `.idx.json` и восстановлением при старте приложения.
-- **Оптимизатор запросов**: выбор между `IndexScan` (O(log N)) и `SeqScan` (O(N)) на основе условий `WHERE`.
-- **Надежность и атомарность**: атомарная запись файлов (`ATOMIC_MOVE`), защита от повреждения данных при прерывании питания, журнал упреждающей записи (WAL).
-- **Два интерфейса**: полнофункциональный интерактивный CLI с форматированием результатов в ASCII-таблицы и графический интерфейс Swing.
-
----
-
-## Поддерживаемая схема данных и типы
-
-В качестве базовой предметной области реализована схема учета автомобилей и производителей:
-
-1. **Таблица `manufacturers` (производители)**:
-   - `id` (INT, PRIMARY KEY) - идентификатор производителя.
-   - `name` (VARCHAR) - наименование компании.
-   - `country` (VARCHAR) - страна расположения.
-
-2. **Таблица `cars` (автомобили)**:
-   - `id` (INT, PRIMARY KEY) - идентификатор автомобиля.
-   - `brand` (VARCHAR) - марка автомобиля.
-   - `price` (DOUBLE) - стоимость.
-   - `is_available` (BOOLEAN) - статус доступности.
-   - `created_at` (DATE) - дата поступления.
-   - `manufacturer_id` (INT, REFERENCES manufacturers(id)) - внешний ключ на производителя.
-
-СУБД также позволяет создавать любые произвольные таблицы и структуры через команду `CREATE TABLE`.
+1. [Возможности системы](#1-возможности-системы)
+2. [Архитектура системы](#2-архитектура-системы)
+3. [Инструкция пользователя](#3-инструкция-пользователя)
+4. [Результаты тестирования производительности](#4-результаты-тестирования-производительности)
+5. [Команда и распределение файлов для нового репозитория](#5-команда-и-распределение-файлов-для-нового-репозитория)
+6. [Выводы](#6-выводы)
+7. [Список использованных источников](#7-список-использованных-источников)
 
 ---
 
-## Архитектура системы
+## 1. Возможности системы
 
-Кодовая база разделена на слабосвязанные функциональные слои:
+- **Хранение и типы данных**:
+  - Поддерживаемые типы: `INT` (Long), `DOUBLE` (Double), `VARCHAR` (String), `DATE` (`LocalDate`, формат ISO-8601 `YYYY-MM-DD`), `BOOLEAN` (Boolean).
+  - Ограничения целостности: `PRIMARY KEY`, `NOT NULL`, `REFERENCES <table>(<column>)`.
+  - Внешние ключи проверяются при операциях `INSERT`, `UPDATE`, `DELETE` и `DROP TABLE`.
+- **Персистентность и восстановление после сбоя**:
+  - Схемы и строки таблиц сериализуются в JSON (`data/tables/*.schema.json`, `data/tables/*.json`) с использованием Jackson.
+  - Индексы сериализуются отдельно (`data/indexes/*.idx.json`).
+  - Запись выполняется атомарно через временный файл `*.tmp.*` и переименование. При старте `FileStorageEngine` удаляет незавершенные временные файлы.
+  - Журнал предзаписи (`data/wal/wal.log`) фиксирует DDL и DML операции до сброса на диск. Если при запуске журнал не пуст, система выполняет глубокую сверку индексов с данными таблиц и сбрасывает контрольную точку (`checkpoint()`).
+- **SQL-парсер и оптимизатор**:
+  - DDL: `CREATE TABLE [IF NOT EXISTS]`, `DROP TABLE [IF EXISTS]`, `CREATE INDEX [IF NOT EXISTS] ... ON ...`, `DROP INDEX [IF EXISTS]`. Поддерживаются длины типов вида `VARCHAR(50)`.
+  - DML: `INSERT INTO` (полные кортежи, явный список столбцов, пакетная вставка через запятую), `SELECT` (`*` или проекция столбцов, `WHERE`), `UPDATE ... SET ... WHERE`, `DELETE FROM ... WHERE`.
+  - Предикаты `WHERE`: `=`, `!=`, `<>`, `>`, `>=`, `<`, `<=`, `IS NULL`, `IS NOT NULL`, логические связки `AND` (более высокий приоритет) и `OR`, скобки `(...)`, однострочные SQL-комментарии `--`.
+  - Служебные команды: `SHOW TABLES`, `SHOW INDEXES [FROM <table>]`, `DESCRIBE <table>` / `DESC <table>`, `EXPLAIN <SELECT ...>`.
+  - План выполнения: если в `WHERE` присутствует условие по проиндексированному столбцу (и значение не `NULL`), оптимизатор выбирает `IndexScanPlan` по B-дереву; иначе используется `SeqScanPlan` через `RowIterator`.
+- **B-Tree индекс (`BTreeIndex`)**:
+  - Сбалансированное B-дерево с минимальной степенью `t = 8` (до 15 ключей и 16 потомков в узле), поддержкой дубликатов ключей, точечного поиска `search()` и диапазонного поиска `searchRange()`.
+  - Удаление ключей реализовано напрямую на структуре дерева за `O(log N)` с заимствованием у соседей и слиянием узлов без полной перестройки индекса.
 
-```
-ru.danis.dbms/
-├── model/        - Доменные модели: DataType, Column, ForeignKey, TableSchema, Row, QueryResult
-├── storage/      - Дисковое хранилище: StorageEngine, FileStorageEngine, WalEntry, RowIterator
-├── index/        - Подсистема индексов: Index, BTreeIndex
-├── repository/   - Слой доступа к данным: TableRepository, FileTableRepository, DatabaseRepository
-├── parser/       - Синтаксический анализ: TokenType, Token, SqlLexer, SqlParser, Condition, Statement
-├── engine/       - Движок выполнения: QueryEngine, ExecutionPlan, SeqScanPlan, IndexScanPlan
-├── cli/          - Консольный интерфейс: ConsoleApp, TablePrinter
-├── gui/          - Графический интерфейс: DatabaseGui
-├── benchmark/    - Модуль замеров скорости: BenchmarkRunner
-└── Main.java     - Точка входа в программу
-```
+---
 
-### Паттерны проектирования
+## 2. Архитектура системы
 
-1. **DAO / Repository**: интерфейс `TableRepository` и класс `FileTableRepository` инкапсулируют логику выборки, вставки, обновления и удаления записей конкретной таблицы, изолируя бизнес-логику от формата дискового хранения. Класс `DatabaseRepository` управляет каталогом таблиц и проверяет межтабличные ограничения.
-2. **Iterator**: класс `RowIterator` реализует стандартный интерфейс `Iterator<Row>` и `AutoCloseable`, обеспечивая последовательный курсорный обход записей таблицы при `SeqScan` без единовременной загрузки избыточных структур.
-3. **Strategy**: интерфейс `ExecutionPlan` с реализациями `SeqScanPlan` и `IndexScanPlan` позволяет изолировать алгоритмы исполнения запроса и выбирать оптимальную стратегию на этапе анализа условий `WHERE`.
-4. **Factory Method**: фабричные методы в `QueryResult` (`forSelect`, `forMutation`, `forExplain`) стандартизируют создание результатов работы СУБД для пользовательского интерфейса.
+Проект разделен на слои в пакете `ru.danis.dbms`:
+
+- `model` - модели данных (`DataType`, `Column`, `ForeignKey`, `TableSchema`, `Row`, `QueryResult`).
+- `storage` - подсистема дискового ввода-вывода и WAL (`StorageEngine`, `FileStorageEngine`, `WalEntry`, `RowIterator`).
+- `index` - структура индексирования (`Index`, `BTreeIndex`).
+- `repository` - паттерн Repository для таблиц и координации связей (`TableRepository`, `FileTableRepository`, `DatabaseRepository`).
+- `parser` и `parser.statement` - лексический анализатор, рекурсивный парсер, деревья условий `Condition` и AST-классы команд.
+- `engine` - планировщик и исполнитель (`QueryEngine`, `ExecutionPlan`, `SeqScanPlan`, `IndexScanPlan`).
+- `cli`, `gui`, `benchmark` - консольный REPL (`ConsoleApp`, `TablePrinter`), Swing-интерфейс (`DatabaseGui`), замер производительности (`BenchmarkRunner`) и точка входа (`Main`).
 
 ### Диаграмма классов
 
 ```mermaid
 classDiagram
-    class StorageEngine {
-        <<interface>>
-        +saveTable(TableSchema, List~Row~)
-        +loadSchema(String) TableSchema
-        +loadRows(String, TableSchema) List~Row~
-        +saveIndex(Index)
-        +loadIndex(...) Index
-        +appendWal(String, String, String)
+    class Main {
+        +main(String[] args)
     }
-
-    class FileStorageEngine {
-        -Path baseDirectory
-        -ObjectMapper mapper
-        +saveTable(TableSchema, List~Row~)
-        +loadSchema(String) TableSchema
+    class ConsoleApp {
+        -QueryEngine engine
+        +start()
+        +initDemoData()
     }
-    StorageEngine <|.. FileStorageEngine
-
-    class Index {
-        <<interface>>
-        +insert(Comparable, Object)
-        +delete(Comparable, Object)
-        +search(Comparable) List~Object~
-        +searchRange(...) List~Object~
+    class DatabaseGui {
+        -QueryEngine engine
+        -DatabaseRepository repository
     }
-
-    class BTreeIndex {
-        -BTreeNode root
-        -int size
-        +insert(Comparable, Object)
-        +search(Comparable) List~Object~
+    class QueryEngine {
+        -DatabaseRepository databaseRepository
+        +execute(String sql) QueryResult
+        +execute(Statement stmt) QueryResult
+        +buildOptimizedPlan(TableRepository, Condition) ExecutionPlan
     }
-    Index <|.. BTreeIndex
-
-    class TableRepository {
-        <<interface>>
-        +insert(Row)
-        +findByPrimaryKey(Object) Row
-        +findAll() List~Row~
-        +update(Condition, Map) int
-        +delete(Condition) int
-        +iterator() RowIterator
-    }
-
-    class FileTableRepository {
-        -TableSchema schema
-        -List~Row~ rows
-        -Map~Object, Row~ primaryKeyIndex
-        -Map~String, Index~ indexesByName
-    }
-    TableRepository <|.. FileTableRepository
-
     class ExecutionPlan {
         <<interface>>
         +describe() String
@@ -155,257 +85,245 @@ classDiagram
     class IndexScanPlan {
         -TableRepository repository
         -Index index
+        -Condition indexedCondition
+        -Condition remainingCondition
     }
-    ExecutionPlan <|.. SeqScanPlan
-    ExecutionPlan <|.. IndexScanPlan
-
-    class QueryEngine {
-        -DatabaseRepository databaseRepository
-        +execute(String) QueryResult
-        +buildOptimizedPlan(...) ExecutionPlan
+    class SqlParser {
+        +parse() Statement
+    }
+    class DatabaseRepository {
+        -StorageEngine storageEngine
+        -Map~String, TableRepository~ tables
+        +initialize()
+        +createTable(TableSchema)
+        +dropTable(String)
+        +createIndex(String, String, String)
+        +close()
+    }
+    class TableRepository {
+        <<interface>>
+        +insert(Row)
+        +insertBatch(List~Row~)
+        +findByPrimaryKey(Object) Row
+        +iterator() RowIterator
+        +update(Condition, Map) int
+        +delete(Condition) int
+    }
+    class FileTableRepository {
+        -TableSchema schema
+        -List~Row~ rows
+        -Map~Object, Row~ primaryKeyMap
+        -Map~String, Index~ indexes
+        +reconcileIndexes(boolean deepVerify)
+    }
+    class StorageEngine {
+        <<interface>>
+        +initialize()
+        +saveTable(TableSchema, List~Row~)
+        +saveIndex(Index)
+        +appendWal(String, String, String)
+        +checkpoint()
+    }
+    class BTreeIndex {
+        -int DEGREE
+        +insert(Comparable, Object)
+        +delete(Comparable, Object)
+        +search(Comparable) List~Object~
+        +searchRange(...) List~Object~
     }
 
+    Main --> QueryEngine
+    ConsoleApp --> QueryEngine
+    DatabaseGui --> QueryEngine
+    QueryEngine --> SqlParser
     QueryEngine --> DatabaseRepository
     QueryEngine --> ExecutionPlan
-    DatabaseRepository --> TableRepository
-    FileTableRepository --> StorageEngine
-    FileTableRepository --> Index
+    ExecutionPlan <|.. SeqScanPlan
+    ExecutionPlan <|.. IndexScanPlan
+    DatabaseRepository *-- TableRepository
+    DatabaseRepository --> StorageEngine
+    TableRepository <|.. FileTableRepository
+    FileTableRepository *-- BTreeIndex
+    Index <|.. BTreeIndex
 ```
 
-### Диаграмма последовательности
-
-Сценарий выполнения запроса `SELECT brand, price FROM cars WHERE brand = 'Toyota'`:
+### Диаграмма последовательности: выполнение `SELECT` с индексом и без индекса
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor User as Пользователь / GUI
-    participant Engine as QueryEngine
-    participant Parser as SqlParser
-    participant Repo as DatabaseRepository
-    participant TableRepo as FileTableRepository
-    participant Index as BTreeIndex
-    participant Plan as IndexScanPlan
+    actor User
+    participant ConsoleApp
+    participant QueryEngine
+    participant SqlParser
+    participant FileTableRepository
+    participant BTreeIndex
 
-    User->>Engine: execute(SELECT brand, price FROM cars WHERE brand = 'Toyota')
-    Engine->>Parser: parse()
-    Parser-->>Engine: SelectStatement(cars, brand = 'Toyota')
-    Engine->>Repo: getTable(cars)
-    Repo-->>Engine: FileTableRepository
-    Engine->>TableRepo: getIndexForColumn(brand)
-    TableRepo-->>Engine: BTreeIndex(idx_cars_brand)
-    Engine->>Engine: buildOptimizedPlan (choose IndexScanPlan)
-    Engine->>Plan: execute()
-    Plan->>Index: search('Toyota')
-    Index-->>Plan: primary_key 1
-    Plan->>TableRepo: findByPrimaryKey(1)
-    TableRepo-->>Plan: Row(1, 'Toyota', 25000.0)
-    Plan-->>Engine: List of Rows (1 row)
-    Engine->>Engine: projection (brand, price)
-    Engine-->>User: QueryResult (table, elapsed time, plan)
+    User->>ConsoleApp: SELECT brand, price FROM cars WHERE brand = 'Toyota';
+    ConsoleApp->>QueryEngine: execute(sql)
+    QueryEngine->>SqlParser: parse()
+    SqlParser-->>QueryEngine: SelectStatement
+    QueryEngine->>QueryEngine: validateWhereColumns()
+    QueryEngine->>FileTableRepository: getIndexForColumn("brand")
+    alt Индекс найден
+        FileTableRepository-->>QueryEngine: BTreeIndex(idx_cars_brand)
+        QueryEngine->>BTreeIndex: search("Toyota")
+        BTreeIndex-->>QueryEngine: [recordId = 1]
+        QueryEngine->>FileTableRepository: findByPrimaryKey(1)
+        FileTableRepository-->>QueryEngine: Row(id=1, brand='Toyota', ...)
+    else Индекс отсутствует
+        FileTableRepository-->>QueryEngine: null
+        QueryEngine->>FileTableRepository: iterator() (RowIterator)
+        FileTableRepository-->>QueryEngine: Полный перебор и фильтрация Condition.test()
+    end
+    QueryEngine-->>ConsoleApp: QueryResult
+    ConsoleApp-->>User: Форматированная таблица и ExecutionPlan
+```
+
+### Диаграмма последовательности: вставка записи, WAL и восстановление
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant QueryEngine
+    participant DatabaseRepository
+    participant FileTableRepository
+    participant FileStorageEngine
+
+    User->>QueryEngine: INSERT INTO cars VALUES (...)
+    QueryEngine->>DatabaseRepository: validateForeignKeysOnInsert()
+    QueryEngine->>FileTableRepository: insertBatch(rows)
+    FileTableRepository->>FileTableRepository: Проверка PK, NOT NULL и приведение типов
+    FileTableRepository->>FileStorageEngine: appendWal("INSERT_BATCH", "cars", ...)
+    FileTableRepository->>FileStorageEngine: saveTable(schema, rows) (tmp -> atomic move)
+    FileTableRepository->>FileStorageEngine: saveIndex(idx) (tmp -> atomic move)
+    Note over FileStorageEngine: При следующем старте initialize() удаляет *.tmp.*, проверяет wal.log, перестраивает несогласованные индексы и вызывает checkpoint()
 ```
 
 ---
 
-## Подсистема хранения и надежность
+## 3. Инструкция пользователя
 
-Хранилище организовано в виде иерархии файлов на диске (по умолчанию в каталоге `data/`):
+### Требования и сборка
 
-```
-data/
-├── tables/
-│   ├── manufacturers.schema.json
-│   ├── manufacturers.data.json
-│   ├── cars.schema.json
-│   └── cars.data.json
-├── indexes/
-│   └── cars_idx_cars_brand.idx.json
-└── wal/
-    └── wal.log
-```
+- Java 17 или новее (совместимо с требованием Java 8+ в предметной области; в `pom.xml` задана целевая версия 17).
+- Apache Maven 3.8+.
 
-1. **Атомарность сохранения**: при обновлении таблиц или индексов данные сначала записываются во временный файл (`*.tmp.<timestamp>`), после чего вызывается атомарная замена `Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)`. Это исключает состояние полузаписанного или битого файла при падении процесса или внезапном отключении.
-2. **Журнал упреждающей записи (Write-Ahead Log)**: любая операция изменения структуры или данных фиксируется в `wal.log` до применения изменений на диске. Журнал содержит последовательный номер, временную метку, тип операции, целевую таблицу и подробности транзакции.
-3. **Восстановление при старте**: при запуске программы `DatabaseRepository.initialize()` считывает сохраненные схемы, восстанавливает первичные ключи, загружает строки и заново строит в памяти индексные деревья из `.idx.json`.
-
----
-
-## Алгоритм индексирования и оптимизация
-
-Для ускорения операций поиска реализован B-Tree индекс (класс `BTreeIndex`):
-- Степень дерева $T = 8$ (максимум $2T - 1 = 15$ ключей на узел).
-- Поддерживает не только точечный поиск равенства (`=`), но и диапазонные выборки (`>`, `>=`, `<`, `<=`).
-- Для неключевых колонок с дубликатами значений индекс хранит список идентификаторов записей для каждого ключа.
-- Поиск ключа выполняется за время $O(\log N)$, в отличие от последовательного сканирования $O(N)$.
-
-Оптимизатор `QueryEngine.buildOptimizedPlan()` автоматически проверяет, существует ли активный B-Tree индекс по столбцу из условия `WHERE`. Если индекс найден, формируется план `IndexScanPlan`. Если индекс отсутствует, запрос исполняется через `SeqScanPlan`.
-
-С помощью команды `EXPLAIN` пользователь может визуализировать выбранный план:
-
-```sql
-EXPLAIN SELECT * FROM cars WHERE brand = 'Toyota';
--- Вывод: IndexScan(table=cars, index=idx_cars_brand, keyCondition=brand = Toyota)
-
-EXPLAIN SELECT * FROM cars WHERE price > 20000;
--- Вывод: SeqScan(table=cars, filter=price > 20000, totalRows=2)
-```
-
----
-
-## Результаты тестирования производительности
-
-Сравнение производительности последовательного поиска (`SeqScan`) и поиска по B-Tree индексу (`IndexScan`) на различных объемах данных (замеры проводились на процессоре x86_64 в среде Linux):
-
-| Количество записей ($N$) | SeqScan (мс) | IndexScan (мс) | Коэффициент ускорения (Speedup) |
-| :---: | :---: | :---: | :---: |
-| **500** | 0.3532 | 0.1655 | **2.13x** |
-| **2 000** | 0.5426 | 0.2410 | **2.25x** |
-| **5 000** | 0.4678 | 0.4654 | **1.01x** |
-| **10 000** | 1.8119 | 0.6325 | **2.86x** |
-
-### Анализ результатов
-
-1. Время работы `SeqScan` растет линейно с увеличением количества записей в таблице, так как требуется полный перебор всех строк и проверка предикатов для каждого кортежа.
-2. Время выборки по B-Tree индексу возрастает логарифмически $O(\log N)$, оставаясь в субмиллисекундном диапазоне даже при 10 000+ строк.
-3. На масштабе 10 000 записей применение B-Tree индекса дает ускорение в ~2.86 раза для точечной выборки.
-
----
-
-## Инструкция пользователя
-
-### Требования
-
-- Java Development Kit (JDK) версии 17 или выше (проверено на OpenJDK 21).
-- Apache Maven версии 3.8 или выше.
-
-### Сборка проекта
-
-Клонируйте репозиторий и соберите исполняемый fat JAR:
+Сборка исполняемого JAR с зависимостями и запуск модульных тестов (43 теста в 7 классах):
 
 ```bash
-git clone https://github.com/DanislonZombovich/java-lab2.git
-cd java-lab2
-mvn clean package -DskipTests=false
+mvn clean package
 ```
 
-После сборки в каталоге `target/` будет сформирован исполняемый файл `simple-dbms-1.0.0.jar`.
+Генерация Javadoc (собирается без предупреждений):
 
-### Запуск консольного интерфейса
+```bash
+mvn javadoc:javadoc
+```
 
-Для запуска интерактивной консоли выполните:
+### Режимы запуска
 
+1. **Интерактивная консоль (CLI)**:
 ```bash
 java -jar target/simple-dbms-1.0.0.jar
 ```
+С указанием отдельного каталога данных:
+```bash
+java -jar target/simple-dbms-1.0.0.jar --data ./my_data
+```
 
-Команды консоли:
-- `help` - справка по командам и синтаксису.
-- `init-demo` - инициализация демонстрационных связанных таблиц (`manufacturers`, `cars`) и индекса.
-- `tables` - вывод списка существующих таблиц.
-- `schema <имя_таблицы>` - просмотр структуры таблицы.
-- `indexes` - просмотр списка индексов.
-- `benchmark` - запуск встроенного бенчмарка производительности.
-- `exit` или `quit` - выход из программы.
-
-### Запуск графического интерфейса
-
-Для запуска графической консоли Swing:
-
+2. **Графический интерфейс (Swing)**:
 ```bash
 java -jar target/simple-dbms-1.0.0.jar --gui
 ```
 
-Интерфейс предоставляет:
-- Дерево каталога таблиц, их колонок и индексов в левой панели.
-- Редактор SQL-запросов с выпадающим списком шаблонов и горячей клавишей `F5`.
-- Табличный компонент `JTable` для отображения результатов выборки.
-- Панель статуса с информацией о времени исполнения и типе плана запроса.
+3. **Инициализация демонстрационных таблиц `manufacturers` и `cars`**:
+```bash
+java -jar target/simple-dbms-1.0.0.jar --init-demo
+```
 
-### Запуск бенчмарка
-
-Для прямого вызова бенчмарка из терминала:
-
+4. **Запуск теста производительности (SeqScan vs B-Tree IndexScan)**:
 ```bash
 java -jar target/simple-dbms-1.0.0.jar --benchmark
 ```
 
-### Примеры SQL-запросов
+### Консольные команды и примеры SQL-запросов
 
-#### 1. Создание связанных таблиц (DDL)
+Служебные команды в CLI (допускается точка с запятой на конце или без нее):
+- `help` - список поддерживаемых конструкций SQL и команд;
+- `init-demo` - создать таблицы `manufacturers` и `cars` со связью по внешнему ключу и индексом (повторный вызов безопасен);
+- `tables` - список таблиц (`SHOW TABLES;`);
+- `indexes` - список индексов (`SHOW INDEXES;`);
+- `schema <таблица>` - структура таблицы (`DESCRIBE <таблица>;`);
+- `benchmark` - выполнить замер скорости индексного и последовательного сканирования;
+- `exit` / `quit` - закрыть базу с сохранением контрольной точки WAL и выйти.
+
+SQL-операторы необходимо завершать символом `;`:
+
 ```sql
-CREATE TABLE manufacturers (id INT PRIMARY KEY, name VARCHAR, country VARCHAR);
+CREATE TABLE manufacturers (
+    id INT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    country VARCHAR
+);
 
 CREATE TABLE cars (
     id INT PRIMARY KEY,
-    brand VARCHAR,
+    brand VARCHAR NOT NULL,
     price DOUBLE,
     is_available BOOLEAN,
     created_at DATE,
     manufacturer_id INT REFERENCES manufacturers(id)
 );
-```
 
-#### 2. Вставка данных (DML)
-```sql
-INSERT INTO manufacturers (id, name, country) VALUES 
-  (1, 'Toyota Motor Corp', 'Japan'), 
-  (2, 'Bayerische Motoren Werke AG', 'Germany');
+CREATE INDEX idx_cars_brand ON cars (brand);
 
+INSERT INTO manufacturers VALUES (1, 'Toyota Motor Corp', 'Japan');
 INSERT INTO cars VALUES (1, 'Toyota', 25000.0, TRUE, '2024-01-15', 1);
-INSERT INTO cars (id, brand, price, is_available, manufacturer_id) VALUES (2, 'BMW', 35000.0, TRUE, 2);
-```
+INSERT INTO cars (id, brand) VALUES (2, 'BMW');
 
-#### 3. Выборка и фильтрация (DQL)
-```sql
 SELECT * FROM cars;
-SELECT brand, price FROM cars WHERE price > 20000;
-SELECT * FROM cars WHERE brand = 'Toyota';
-```
+SELECT brand, price FROM cars WHERE (brand = 'Toyota' OR brand = 'BMW') AND price > 20000;
+EXPLAIN SELECT * FROM cars WHERE brand = 'Toyota';
 
-#### 4. Обновление и удаление
-```sql
 UPDATE cars SET price = 30000 WHERE id = 2;
 DELETE FROM cars WHERE brand = 'Toyota';
 ```
 
-#### 5. Создание и удаление индексов
-```sql
-CREATE INDEX idx_cars_brand ON cars (brand);
-DROP INDEX idx_cars_brand;
-```
+---
 
-#### 6. Анализ плана запроса
-```sql
-EXPLAIN SELECT * FROM cars WHERE brand = 'BMW';
-```
+## 4. Результаты тестирования производительности
 
-#### 7. Удаление таблиц
-```sql
-DROP TABLE cars;
-DROP TABLE manufacturers;
-```
+Замеры выполнялись командой `java -jar target/simple-dbms-1.0.0.jar --benchmark` (`BenchmarkRunner`):
+- Схема тестовой таблицы: `(id INT PRIMARY KEY, brand VARCHAR, price DOUBLE, is_available BOOLEAN)`.
+- Кардинальность индексируемого поля `brand`: 100 уникальных значений (`Brand_000`..`Brand_099`, селективность около 1%).
+- Методика: 20 прогревочных выполнений запроса перед каждым замером (для JIT-компиляции HotSpot), затем усреднение по 50 последовательным запросам `SELECT * FROM bench_<N> WHERE brand = 'Brand_042';` до создания индекса (`SeqScan`) и после `CREATE INDEX` (`IndexScan`).
+
+| Записей (N) | SeqScan (ms) | IndexScan (ms) | Ускорение |
+|-------------|--------------|----------------|-----------|
+| 500         | 0.1958       | 0.0464         | 4.22x     |
+| 2000        | 0.1950       | 0.0424         | 4.60x     |
+| 5000        | 0.3012       | 0.1112         | 2.71x     |
+| 10000       | 1.0185       | 0.0415         | 24.55x    |
+
+Анализ результатов: время полного перебора (`SeqScan`) растет линейно с размером таблицы (до `1.0185 ms` при 10 000 строках), тогда как поиск по B-дереву (`IndexScan`) остается в пределах `0.04 - 0.11 ms` за счет логарифмической высоты дерева и O(1)-доступа по первичному ключу.
 
 ---
 
-## Распределение обязанностей в команде и инструкция по коммитам
+## 5. Команда и распределение файлов для нового репозитория
 
-Работа над проектом распределена между тремя участниками:
-1. **Егоров Даниил** — Team Lead / Архитектор ядра хранилища и репозиториев (Storage & Data Access).
-2. **Егор Глазов** — Инженер языкового процессора и пользовательских интерфейсов (Parser, Query Execution & UI).
-3. **Максим Жулин** — Инженер алгоритмов индексирования, оптимизации и тестирования (B-Tree, Optimizer & QA).
+Для командной сдачи создан отдельный репозиторий: `https://github.com/DanislonZombovich/simple-dbms`.
+Ниже распределены все 53 отслеживаемых файла проекта между тремя участниками без пропусков и пересечений.
 
----
+> **Техническое замечание по порядку коммитов**: модули хранения и репозиториев (`storage`, `repository`) используют интерфейс `Index`, класс `BTreeIndex` и дерево условий `Condition`. Поэтому Даниил (шаг 1) коммитит базовую конфигурацию проекта и свой слой первым, после коммита Егора (шаг 2) проект начинает компилироваться (`mvn compile`), а после коммита Максима (шаг 3) собирается полностью и проходят все 43 теста (`mvn test`).
 
-### 1. Егоров Даниил (Team Lead, Storage & Data Access)
+### Участник 1: Даниил Егоров - Модели, подсистема хранения, WAL, репозитории и конфиг проекта (УЖЕ ЗАКОММИЧЕНО)
 
-**Зона ответственности:**
-- Проектирование общей архитектуры СУБД, выбор паттернов проектирования (DAO, Repository, Iterator, Strategy).
-- Создание доменных моделей базы данных (`DataType`, `Column`, `ForeignKey`, `TableSchema`, `Row`).
-- Реализация подсистемы физического хранения на диске (`FileStorageEngine`) с поддержкой JSON-сериализации.
-- Обеспечение отказоустойчивости и надежности: атомарная запись файлов (`ATOMIC_MOVE`) во избежание повреждения файлов при сбоях и реализация журнала транзакций упреждающей записи (**Write-Ahead Log / WAL**).
-- Реализация слоя доступа к данным (`TableRepository`, `FileTableRepository`, `DatabaseRepository`), валидация уникальности `PRIMARY KEY` и проверка ограничений ссылочной целостности `FOREIGN KEY` при вставке, обновлении, удалении строк и удалении таблиц.
+**Ответственность**: архитектура хранения на диске, модели типов данных и таблиц, атомарное сохранение, WAL и восстановление при перезапуске, проверка ссылочной целостности внешних ключей, стартовый `pom.xml`, `.gitignore` и краткий `README.md`.
 
-**Закрепленные файлы:**
+**Файлы (12 Java-файлов + 3 проектных файла)**:
+- `.gitignore`
+- `pom.xml`
+- `README.md` (краткое описание проекта и инструкции для пользователей)
 - `src/main/java/ru/danis/dbms/model/DataType.java`
 - `src/main/java/ru/danis/dbms/model/Column.java`
 - `src/main/java/ru/danis/dbms/model/ForeignKey.java`
@@ -419,171 +337,101 @@ DROP TABLE manufacturers;
 - `src/main/java/ru/danis/dbms/repository/FileTableRepository.java`
 - `src/main/java/ru/danis/dbms/repository/DatabaseRepository.java`
 
-**Детальный сценарий коммитов (Егоров Даниил):**
+### Участник 2: Егор Глазов - Индексы B-Tree, лексер, SQL-парсер и AST-команды
 
-```bash
-# Коммит 1.1: Определение базовых доменных моделей и схемы таблиц
-git add src/main/java/ru/danis/dbms/model/DataType.java \
-        src/main/java/ru/danis/dbms/model/Column.java \
-        src/main/java/ru/danis/dbms/model/ForeignKey.java \
-        src/main/java/ru/danis/dbms/model/TableSchema.java \
-        src/main/java/ru/danis/dbms/model/Row.java
-git commit -m "feat(model): implement relational domain entities, datatypes, and foreign keys"
+**Ответственность**: реализация B-Tree индекса сбалансированного порядка (`insert`, `search`, `searchRange`, CLRS `delete`), лексический анализ, рекурсивный спуск с приоритетами `AND`/`OR` и скобками, классы SQL-выражений и `QueryResult`.
 
-# Коммит 1.2: Подсистема дискового хранения, атомарность и журнал WAL
-git add src/main/java/ru/danis/dbms/storage/StorageEngine.java \
-        src/main/java/ru/danis/dbms/storage/FileStorageEngine.java \
-        src/main/java/ru/danis/dbms/storage/WalEntry.java \
-        src/main/java/ru/danis/dbms/storage/RowIterator.java
-git commit -m "feat(storage): implement FileStorageEngine with atomic write, JSON persistence, and WAL"
-
-# Коммит 1.3: Слой репозиториев, валидация первичных и внешних ключей
-git add src/main/java/ru/danis/dbms/repository/TableRepository.java \
-        src/main/java/ru/danis/dbms/repository/FileTableRepository.java \
-        src/main/java/ru/danis/dbms/repository/DatabaseRepository.java
-git commit -m "feat(repository): implement table repositories with primary and foreign key integrity checks"
-```
-
----
-
-### 2. Егор Глазов (Parser, Query Execution & UI)
-
-**Зона ответственности:**
-- Разработка лексического анализатора SQL-запросов (`SqlLexer`), выделение ключевых слов, идентификаторов, операторов и литералов.
-- Синтаксический разбор языка запросов методом рекурсивного спуска (`SqlParser`): поддержка команд `CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`, `DROP INDEX`, `INSERT INTO`, `SELECT`, `UPDATE`, `DELETE`, `EXPLAIN`, `SHOW TABLES`, `DESCRIBE`.
-- Обработка и маршрутизация запросов в `QueryEngine`, трансляция AST в вызовы соответствующих репозиториев и построение `QueryResult`.
-- Разработка форматированного вывода результатов в виде красивых ASCII-таблиц (`TablePrinter`).
-- Разработка интерактивной консоли управления (CLI REPL, класс `ConsoleApp`) и точки входа `Main`.
-- Разработка полноценного графического интерфейса пользователя на Swing (`DatabaseGui`).
-
-**Закрепленные файлы:**
+**Файлы (22 Java-файла)**:
+- `src/main/java/ru/danis/dbms/model/QueryResult.java`
+- `src/main/java/ru/danis/dbms/index/Index.java`
+- `src/main/java/ru/danis/dbms/index/BTreeIndex.java`
 - `src/main/java/ru/danis/dbms/parser/TokenType.java`
 - `src/main/java/ru/danis/dbms/parser/Token.java`
 - `src/main/java/ru/danis/dbms/parser/SqlLexer.java`
-- `src/main/java/ru/danis/dbms/parser/Statement.java` (и все производные AST-узлы операторов)
+- `src/main/java/ru/danis/dbms/parser/ComparisonOperator.java`
 - `src/main/java/ru/danis/dbms/parser/Condition.java`
 - `src/main/java/ru/danis/dbms/parser/SqlParser.java`
-- `src/main/java/ru/danis/dbms/model/QueryResult.java`
+- `src/main/java/ru/danis/dbms/parser/statement/Statement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/CreateTableStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/DropTableStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/CreateIndexStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/DropIndexStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/InsertStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/SelectStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/UpdateStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/DeleteStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/DescribeTableStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/ExplainStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/ShowTablesStatement.java`
+- `src/main/java/ru/danis/dbms/parser/statement/ShowIndexesStatement.java`
+
+**Инструкция коммита для Егора**:
+```bash
+git clone https://github.com/DanislonZombovich/simple-dbms.git
+cd simple-dbms
+git pull origin main
+
+# Скопировать перечисленные 22 файла из готового проекта (java-lab2), затем:
+git add src/main/java/ru/danis/dbms/model/QueryResult.java \
+        src/main/java/ru/danis/dbms/index/ \
+        src/main/java/ru/danis/dbms/parser/
+git commit -m "feat(index,parser): implement B-Tree index, SQL lexer, parser, and statement AST"
+git push origin main
+```
+
+### Участник 3: Максим Жулин - Движок запросов, оптимизатор, CLI/GUI, бенчмарк и тесты
+
+**Ответственность**: исполнительный движок `QueryEngine`, выбор плана `IndexScanPlan`/`SeqScanPlan`, консольный REPL и ASCII-таблицы, Swing-интерфейс, стенд `BenchmarkRunner`, точка входа `Main` и полный набор модульных тестов (43 теста).
+
+**Файлы (9 основных Java-файлов + 7 тестовых файлов)**:
+- `src/main/java/ru/danis/dbms/engine/ExecutionPlan.java`
+- `src/main/java/ru/danis/dbms/engine/SeqScanPlan.java`
+- `src/main/java/ru/danis/dbms/engine/IndexScanPlan.java`
 - `src/main/java/ru/danis/dbms/engine/QueryEngine.java`
 - `src/main/java/ru/danis/dbms/cli/TablePrinter.java`
 - `src/main/java/ru/danis/dbms/cli/ConsoleApp.java`
 - `src/main/java/ru/danis/dbms/gui/DatabaseGui.java`
-- `src/main/java/ru/danis/dbms/Main.java`
-
-**Детальный сценарий коммитов (Егор Глазов):**
-
-```bash
-# Коммит 2.1: Лексический анализатор SQL и AST-структура запросов
-git add src/main/java/ru/danis/dbms/parser/TokenType.java \
-        src/main/java/ru/danis/dbms/parser/Token.java \
-        src/main/java/ru/danis/dbms/parser/SqlLexer.java \
-        src/main/java/ru/danis/dbms/parser/Statement.java \
-        src/main/java/ru/danis/dbms/parser/Condition.java
-git commit -m "feat(parser): implement SqlLexer and AST statement node definitions"
-
-# Коммит 2.2: Синтаксический парсер SQL-запросов (DDL, DML, DQL)
-git add src/main/java/ru/danis/dbms/parser/SqlParser.java \
-        src/main/java/ru/danis/dbms/model/QueryResult.java
-git commit -m "feat(parser): implement recursive descent SqlParser for SELECT, INSERT, UPDATE, DELETE"
-
-# Коммит 2.3: Движок исполнения запросов, CLI REPL и ASCII TablePrinter
-git add src/main/java/ru/danis/dbms/engine/QueryEngine.java \
-        src/main/java/ru/danis/dbms/cli/TablePrinter.java \
-        src/main/java/ru/danis/dbms/cli/ConsoleApp.java \
-        src/main/java/ru/danis/dbms/Main.java
-git commit -m "feat(engine,cli): implement query execution engine, CLI REPL, and tabular ASCII printer"
-
-# Коммит 2.4: Графический интерфейс на Java Swing
-git add src/main/java/ru/danis/dbms/gui/DatabaseGui.java
-git commit -m "feat(gui): implement graphical user interface in Swing with schema tree and query editor"
-```
-
----
-
-### 3. Максим Жулин (B-Tree Indexing, Query Optimization & QA)
-
-**Зона ответственности:**
-- Реализация структуры данных сбалансированного **B-Tree** индекса (`Index`, `BTreeIndex` со степенью $T=8$), алгоритмов вставки с расщеплением переполненных узлов, точечного поиска и диапазонного сканирования.
-- Сохранение деревьев индексов на диск и их автоматическое восстановление при запуске.
-- Разработка планов выполнения запросов (`ExecutionPlan`, `SeqScanPlan`, `IndexScanPlan`) и модуля оптимизации `WHERE`-предикатов для перехода с $O(N)$ на $O(\log N)$.
-- Разработка автоматизированного стенда тестирования производительности (`BenchmarkRunner`) и снятие метрик.
-- Разработка полного набора автоматизированных JUnit 5 тестов (модели, парсер, хранилище, целостность FK, B-Tree, сложные граничные сценарии).
-- Анализ производительности и оформление технического отчета в `README.md`.
-
-**Закрепленные файлы:**
-- `src/main/java/ru/danis/dbms/index/Index.java`
-- `src/main/java/ru/danis/dbms/index/BTreeIndex.java`
-- `src/main/java/ru/danis/dbms/engine/ExecutionPlan.java`
-- `src/main/java/ru/danis/dbms/engine/SeqScanPlan.java`
-- `src/main/java/ru/danis/dbms/engine/IndexScanPlan.java`
 - `src/main/java/ru/danis/dbms/benchmark/BenchmarkRunner.java`
+- `src/main/java/ru/danis/dbms/Main.java`
+- `src/test/java/ru/danis/dbms/DataTypeTest.java`
 - `src/test/java/ru/danis/dbms/BTreeIndexTest.java`
 - `src/test/java/ru/danis/dbms/SqlParserTest.java`
-- `src/test/java/ru/danis/dbms/DataTypeTest.java`
-- `src/test/java/ru/danis/dbms/ForeignKeyTest.java`
 - `src/test/java/ru/danis/dbms/StorageEngineTest.java`
+- `src/test/java/ru/danis/dbms/ForeignKeyTest.java`
 - `src/test/java/ru/danis/dbms/QueryEngineTest.java`
-- `src/test/java/ru/danis/dbms/SkepticalReviewTest.java`
-- `README.md` (секции тестирования производительности, бенчмарков и выводов)
+- `src/test/java/ru/danis/dbms/EdgeCaseAndIntegrityTest.java`
 
-**Детальный сценарий коммитов (Максим Жулин):**
-
+**Инструкция коммита для Максима (после пуша Егора)**:
 ```bash
-# Коммит 3.1: Реализация B-Tree индекса с поддержкой точечного и диапазонного поиска
-git add src/main/java/ru/danis/dbms/index/Index.java \
-        src/main/java/ru/danis/dbms/index/BTreeIndex.java
-git commit -m "feat(index): implement persistent B-Tree indexing with point and range lookups"
+git clone https://github.com/DanislonZombovich/simple-dbms.git
+cd simple-dbms
+git pull origin main
 
-# Коммит 3.2: Планировщик выполнения запросов (SeqScan vs IndexScan) и оптимизатор
-git add src/main/java/ru/danis/dbms/engine/ExecutionPlan.java \
-        src/main/java/ru/danis/dbms/engine/SeqScanPlan.java \
-        src/main/java/ru/danis/dbms/engine/IndexScanPlan.java
-git commit -m "feat(optimizer): implement query execution plans (IndexScan vs SeqScan) and explain functionality"
+# Скопировать перечисленные 16 Java-файлов из готового проекта (java-lab2) и проверить сборку:
+mvn clean test
 
-# Коммит 3.3: Модуль нагрузочного бенчмаркинга
-git add src/main/java/ru/danis/dbms/benchmark/BenchmarkRunner.java
-git commit -m "feat(benchmark): add automated benchmark comparing full table scan vs B-Tree index lookup"
-
-# Коммит 3.4: Полный комплект модульных и регрессионных тестов (JUnit 5)
-git add src/test/java/ru/danis/dbms/
-git commit -m "test: add comprehensive JUnit 5 test suite for B-Tree, SQL parser, foreign keys, and edge cases"
-
-# Коммит 3.5: Документация замеров производительности и аналитические выводы
-git add README.md
-git commit -m "docs: document benchmark performance results, team member responsibilities, and conclusions"
+git add src/main/java/ru/danis/dbms/engine/ \
+        src/main/java/ru/danis/dbms/cli/ \
+        src/main/java/ru/danis/dbms/gui/ \
+        src/main/java/ru/danis/dbms/benchmark/ \
+        src/main/java/ru/danis/dbms/Main.java \
+        src/test/java/ru/danis/dbms/
+git commit -m "feat(engine,ui,tests): add query engine, CLI/GUI, benchmark, and test suite"
+git push origin main
 ```
 
 ---
 
-### Сводная таблица распределения коммитов
+## 6. Выводы
 
-| № | Автор | Ветка | Сообщение коммита | Назначение |
-|---|---|---|---|---|
-| **1** | Егоров Даниил | `feature/core-storage` | `feat(model): implement relational domain entities...` | Доменные сущности, типы, валидация строк |
-| **2** | Егоров Даниил | `feature/core-storage` | `feat(storage): implement FileStorageEngine...` | Персистентность на диске, JSON, WAL, Safe Move |
-| **3** | Егоров Даниил | `feature/core-storage` | `feat(repository): implement table repositories...` | Репозитории, проверка Primary Key и Foreign Key |
-| **4** | Егор Глазов | `feature/sql-parser-ui` | `feat(parser): implement SqlLexer and AST...` | Лексер, грамматика токенов, AST-ноды |
-| **5** | Егор Глазов | `feature/sql-parser-ui` | `feat(parser): implement recursive descent SqlParser...` | Синтаксический анализатор DDL/DML/DQL |
-| **6** | Егор Глазов | `feature/sql-parser-ui` | `feat(engine,cli): implement query execution engine...` | QueryEngine, REPL терминал, табличный вывод |
-| **7** | Егор Глазов | `feature/sql-parser-ui` | `feat(gui): implement graphical user interface...` | Swing GUI, каталог схемы, редактор запросов |
-| **8** | Максим Жулин | `feature/btree-index-qa` | `feat(index): implement persistent B-Tree indexing...` | Сбалансированное B-дерево, дисковые индексы |
-| **9** | Максим Жулин | `feature/btree-index-qa` | `feat(optimizer): implement query execution plans...` | Оптимизатор SeqScan/IndexScan, EXPLAIN |
-| **10** | Максим Жулин | `feature/btree-index-qa` | `feat(benchmark): add automated benchmark...` | Стенд сравнения скорости поиска с индексом и без |
-| **11** | Максим Жулин | `feature/btree-index-qa` | `test: add comprehensive JUnit 5 test suite...` | 34 автоматических теста, граничные условия |
-| **12** | Максим Жулин | `feature/btree-index-qa` | `docs: document benchmark performance results...` | Оформление README, таблицы бенчмарков, выводы |
+В ходе выполнения лабораторной работы разработана модульная реляционная СУБД на Java с дисковым хранением таблиц, проверкой внешних ключей и B-Tree индексацией. Атомарная запись через временные файлы, журнал предзаписи и сверка индексов при инициализации обеспечивают целостность данных при повторном запуске. Наличие индекса по столбцу сократило время селективной выборки на таблице из 10 000 записей с `1.0185 ms` до `0.0415 ms` (ускорение в 24.55 раза), а автоматизированное тестирование (43 теста JUnit 5) подтверждает корректность парсера, B-дерева и ограничений целостности.
 
 ---
 
-## Выводы
+## 7. Список использованных источников
 
-В ходе выполнения лабораторной работы была спроектирована и реализована полнофункциональная реляционная СУБД на языке Java. Реализованы базовые реляционные абстракции (таблицы, типы данных, ограничения первичных и внешних ключей), механизмы персистентности на диске с защитой от сбоев, а также B-Tree алгоритм индексирования. Эмпирические замеры подтвердили теоретическую оценку сложности: использование индекса переводит время поиска из линейного $O(N)$ в логарифмическое $O(\log N)$, снижая задержку при точечных запросах на порядок.
-
----
-
-## Список использованных источников
-
-1. Кнут Д. Э. Искусство программирования. Том 3. Сортировка и поиск. - М.: Вильямс, 2007.
-2. Дейт К. Дж. Введение в системы баз данных. - 8-е изд. - М.: Вильямс, 2005.
-3. Кормен Т., Лейзерсон Ч., Ривест Р., Штайн К. Алгоритмы: построение и анализ. - 3-е изд. - М.: Вильямс, 2013. (Глава 18: B-деревья).
-4. Kleppmann M. Designing Data-Intensive Applications: The Big Ideas Behind Reliable, Scalable, and Maintainable Systems. - O'Reilly Media, 2017.
-5. Официальная документация Oracle по языку Java и платформе Java SE 21: https://docs.oracle.com/en/java/javase/21/
+1. Cormen T.H., Leiserson C.E., Rivest R.L., Stein C. Introduction to Algorithms (4th Edition). MIT Press, 2022. Chapter 18: B-Trees.
+2. Garcia-Molina H., Ullman J.D., Widom J. Database Systems: The Complete Book (2nd Edition). Pearson, 2008.
+3. Oracle Java Platform, Standard Edition 17 API Specification - `java.nio.file`, `java.time.LocalDate`, Swing.
+4. FasterXML Jackson Project Documentation - `jackson-databind` 2.18, `jackson-datatype-jsr310`.
+5. JUnit 5 User Guide - `https://junit.org/junit5/docs/current/user-guide/`.
