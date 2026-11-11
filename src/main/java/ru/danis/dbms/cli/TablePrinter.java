@@ -35,7 +35,7 @@ public class TablePrinter {
         List<Row> rows = result.getRows();
 
         if (headers.isEmpty()) {
-            out.printf("Empty set (0.00 ms)%n");
+            out.printf(Locale.US, "Empty set (%.2f ms)%n", result.getExecutionTimeMs());
             return;
         }
 

@@ -626,6 +626,11 @@ public class EdgeCaseAndIntegrityTest {
             QueryResult mutRes = QueryResult.forMutation(1, 2_500_000L, "Inserted");
             ru.danis.dbms.cli.TablePrinter.print(mutRes, new PrintStream(mutBuf, true, StandardCharsets.UTF_8));
             assertTrue(mutBuf.toString(StandardCharsets.UTF_8).contains("[2.50 ms]"));
+
+            ByteArrayOutputStream emptyBuf = new ByteArrayOutputStream();
+            QueryResult emptyHdrRes = QueryResult.forSelect(List.of(), List.of(), 3_750_000L, "Empty");
+            ru.danis.dbms.cli.TablePrinter.print(emptyHdrRes, new PrintStream(emptyBuf, true, StandardCharsets.UTF_8));
+            assertTrue(emptyBuf.toString(StandardCharsets.UTF_8).contains("(3.75 ms)"));
         } finally {
             Locale.setDefault(previous);
         }
