@@ -6,6 +6,7 @@ import ru.danis.dbms.model.Row;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Utility for formatting database query results into aligned ASCII tables.
@@ -23,7 +24,7 @@ public class TablePrinter {
      */
     public static void print(QueryResult result, PrintStream out) {
         if (!result.isSelect()) {
-            out.printf("OK. %s (affected: %d) [%.2f ms]%n",
+            out.printf(Locale.US, "OK. %s (affected: %d) [%.2f ms]%n",
                     result.getMessage(),
                     result.getRowsAffected(),
                     result.getExecutionTimeMs());
@@ -77,7 +78,7 @@ public class TablePrinter {
             }
             out.println(border);
         }
-        out.printf("%d row(s) returned (%.2f ms)%n", rows.size(), result.getExecutionTimeMs());
+        out.printf(Locale.US, "%d row(s) returned (%.2f ms)%n", rows.size(), result.getExecutionTimeMs());
         if (result.getExecutionPlan() != null) {
             out.printf("Execution Plan: %s%n", result.getExecutionPlan());
         }

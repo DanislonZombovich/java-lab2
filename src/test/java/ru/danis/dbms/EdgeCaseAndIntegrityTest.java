@@ -610,4 +610,24 @@ public class EdgeCaseAndIntegrityTest {
         assertTrue(engine.execute("SELECT * FROM logs WHERE tag = 'alpha';").getRows().isEmpty());
         repo.close();
     }
+
+    @Test
+    @DisplayName("TablePrinter formats timing in US locale regardless of JVM default locale")
+    void testTablePrinterUsesUsLocale() {
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("ru-RU"));
+            ByteArrayOutputStream selectBuf = new ByteArrayOutputStream();
+            QueryResult selectRes = QueryResult.forSelect(List.of("id"), List.of(), 1_250_000L, "SeqScan");
+            ru.danis.dbms.cli.TablePrinter.print(selectRes, new PrintStream(selectBuf, true, StandardCharsets.UTF_8));
+            assertTrue(selectBuf.toString(StandardCharsets.UTF_8).contains("(1.25 ms)"));
+
+            ByteArrayOutputStream mutBuf = new ByteArrayOutputStream();
+            QueryResult mutRes = QueryResult.forMutation(1, 2_500_000L, "Inserted");
+            ru.danis.dbms.cli.TablePrinter.print(mutRes, new PrintStream(mutBuf, true, StandardCharsets.UTF_8));
+            assertTrue(mutBuf.toString(StandardCharsets.UTF_8).contains("[2.50 ms]"));
+        } finally {
+            Locale.setDefault(previous);
+        }
+    }
 }
