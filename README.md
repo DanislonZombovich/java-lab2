@@ -34,9 +34,14 @@
 
 ## 2. Архитектура системы
 
-Пакеты внутри `ru.danis.dbms` разделены по слоям. В `model` описаны типы столбцов (`DataType`), сами столбцы и внешние ключи (`Column`, `ForeignKey`), схема таблицы (`TableSchema`), строка (`Row`) и результат запроса (`QueryResult`). Слой `storage` (`StorageEngine`, `FileStorageEngine`, `WalEntry`, `RowIterator`) отвечает за чтение и атомарную запись JSON на диск, ведение `wal.log` и последовательный обход записей. В `index` лежат интерфейс `Index` и B-дерево `BTreeIndex`.
-
-За целостность таблиц и связей отвечает пакет `repository` (`TableRepository`, `FileTableRepository`, `DatabaseRepository`). Разбор SQL собран в `parser` и `parser.statement`: там находятся лексер `SqlLexer`, токены, рекурсивный парсер `SqlParser`, дерево условий `Condition` и классы команд `Statement`. В `engine` планировщик `QueryEngine` выбирает между `IndexScanPlan` и `SeqScanPlan` (интерфейс `ExecutionPlan`). Над движком работают консоль (`cli.ConsoleApp`, `cli.TablePrinter`), окно Swing (`gui.DatabaseGui`), замер скорости (`benchmark.BenchmarkRunner`) и точка входа `Main`.
+Все исходные файлы проекта размещены непосредственно в каталоге `src/` без вложенных пакетов, а модульные тесты собраны в `test/`. Логически классы разделены по слоям и подсистемам:
+- Доменные модели: типы столбцов `DataType`, описание полей `Column`, внешние ключи `ForeignKey`, схема `TableSchema`, строка `Row` и результат `QueryResult`
+- Физическое хранение: интерфейс `StorageEngine`, реализация `FileStorageEngine`, элемент журнала `WalEntry`, итератор `RowIterator`
+- Индексация: интерфейс `Index` и сбалансированное B-дерево `BTreeIndex`
+- Слой доступа к данным: интерфейс `TableRepository`, реализация `FileTableRepository`, фасад базы `DatabaseRepository`
+- Разбор SQL: лексер `SqlLexer`, токены `Token` и `TokenType`, операторы `ComparisonOperator`, дерево условий `Condition`, парсер `SqlParser` и синтаксические узлы команд `Statement`, `CreateTableStatement`, `DropTableStatement`, `CreateIndexStatement`, `DropIndexStatement`, `InsertStatement`, `SelectStatement`, `UpdateStatement`, `DeleteStatement`, `DescribeTableStatement`, `ExplainStatement`, `ShowTablesStatement`, `ShowIndexesStatement`
+- Выполнение запросов: планировщик `QueryEngine`, интерфейс плана `ExecutionPlan` и реализации `SeqScanPlan`, `IndexScanPlan`
+- Интерфейс и замеры: табличный форматтер `TablePrinter`, консольный REPL `ConsoleApp`, окно Swing `DatabaseGui`, нагрузочный модуль `BenchmarkRunner` и точка входа `Main`
 
 ### Диаграмма классов
 
@@ -296,112 +301,135 @@ DELETE FROM cars WHERE brand = 'Toyota';
 
 ## 5. Команда и распределение файлов для нового репозитория
 
-Для совместной сдачи заведен отдельный репозиторий: `https://github.com/DanislonZombovich/simple-dbms`. Все 53 отслеживаемых файла текущего проекта поделены между тремя участниками.
+Для совместной сдачи подготовлен чистый репозиторий: `https://github.com/DanislonZombovich/simple-rdbms`. Все 53 отслеживаемых файла проекта (3 конфигурационных, 43 исходных Java-файла в `src/` и 7 тестовых классов в `test/`) распределены между тремя участниками.
 
-Порядок коммитов привязан к зависимостям между слоями: репозитории используют `Index`, `BTreeIndex` и `Condition`. Поэтому Даниил (первый шаг) закидывает базовую конфигурацию и слой хранения, после пуша Егора (второй шаг) проект уже собирается через `mvn compile`, а после пуша Максима (третий шаг) проходит полная сборка с тестами.
+Порядок фиксации изменений учитывает связи между компонентами: классы хранилища и репозиториев используют `Index`, `BTreeIndex` и `Condition`. Сначала Даниил Егоров фиксирует базовую сборку и слой хранения, затем Егор Глазов добавляет парсер и B-дерево (после чего проект компилируется через `mvn compile`), а Максим Жулин завершает цепочку подключением планировщика, интерфейсов и тестов для успешной проверки `mvn clean package`.
 
-### Участник 1: Даниил Егоров (уже закоммичено в simple-dbms)
+### Участник 1: Даниил Егоров (уже закоммичено в simple-rdbms)
 
-Зона ответственности: настройка Maven, модели данных и схем, сериализация в JSON, атомарная запись через временные файлы, журнал `wal.log`, логика восстановления при старте, репозитории таблиц с проверкой внешних ключей и краткий `README.md` в новом репозитории.
+Зона ответственности: конфигурация сборки Maven, базовые модели данных и схемы, дисковое сохранение в JSON, атомарная запись через временные файлы, журнал предзаписи `wal.log`, восстановление целостности при старте, репозитории таблиц с контролем внешних ключей и лаконичный `README.md` в новом репозитории.
 
-Список файлов (3 проектных и 12 Java-файлов):
+Список файлов (3 конфигурационных и 12 исходных файлов в `src/`):
 - `.gitignore`
 - `pom.xml`
 - `README.md`
-- `src/main/java/ru/danis/dbms/model/DataType.java`
-- `src/main/java/ru/danis/dbms/model/Column.java`
-- `src/main/java/ru/danis/dbms/model/ForeignKey.java`
-- `src/main/java/ru/danis/dbms/model/TableSchema.java`
-- `src/main/java/ru/danis/dbms/model/Row.java`
-- `src/main/java/ru/danis/dbms/storage/StorageEngine.java`
-- `src/main/java/ru/danis/dbms/storage/FileStorageEngine.java`
-- `src/main/java/ru/danis/dbms/storage/WalEntry.java`
-- `src/main/java/ru/danis/dbms/storage/RowIterator.java`
-- `src/main/java/ru/danis/dbms/repository/TableRepository.java`
-- `src/main/java/ru/danis/dbms/repository/FileTableRepository.java`
-- `src/main/java/ru/danis/dbms/repository/DatabaseRepository.java`
+- `src/DataType.java`
+- `src/Column.java`
+- `src/ForeignKey.java`
+- `src/TableSchema.java`
+- `src/Row.java`
+- `src/StorageEngine.java`
+- `src/FileStorageEngine.java`
+- `src/WalEntry.java`
+- `src/RowIterator.java`
+- `src/TableRepository.java`
+- `src/FileTableRepository.java`
+- `src/DatabaseRepository.java`
 
 ### Участник 2: Егор Глазов
 
-Зона ответственности: B-Tree индекс (вставка, точечный и диапазонный поиск, удаление с балансировкой узлов), лексический анализатор `SqlLexer`, рекурсивный парсер `SqlParser` с приоритетом `AND` над `OR` и скобками, дерево условий `Condition`, классы AST команд и модель `QueryResult`.
+Зона ответственности: B-Tree индекс (вставка, точечный и диапазонный поиск, удаление записей с балансировкой узлов), лексер `SqlLexer`, парсер `SqlParser` с учетом приоритета `AND` над `OR` и вложенных скобок, дерево условий `Condition`, абстрактное синтаксическое дерево SQL-команд и модель результата запроса `QueryResult`.
 
-Список файлов (22 Java-файла):
-- `src/main/java/ru/danis/dbms/model/QueryResult.java`
-- `src/main/java/ru/danis/dbms/index/Index.java`
-- `src/main/java/ru/danis/dbms/index/BTreeIndex.java`
-- `src/main/java/ru/danis/dbms/parser/TokenType.java`
-- `src/main/java/ru/danis/dbms/parser/Token.java`
-- `src/main/java/ru/danis/dbms/parser/SqlLexer.java`
-- `src/main/java/ru/danis/dbms/parser/ComparisonOperator.java`
-- `src/main/java/ru/danis/dbms/parser/Condition.java`
-- `src/main/java/ru/danis/dbms/parser/SqlParser.java`
-- `src/main/java/ru/danis/dbms/parser/statement/Statement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/CreateTableStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/DropTableStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/CreateIndexStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/DropIndexStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/InsertStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/SelectStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/UpdateStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/DeleteStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/DescribeTableStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/ExplainStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/ShowTablesStatement.java`
-- `src/main/java/ru/danis/dbms/parser/statement/ShowIndexesStatement.java`
+Список файлов (22 исходных файла в `src/`):
+- `src/QueryResult.java`
+- `src/Index.java`
+- `src/BTreeIndex.java`
+- `src/TokenType.java`
+- `src/Token.java`
+- `src/SqlLexer.java`
+- `src/ComparisonOperator.java`
+- `src/Condition.java`
+- `src/SqlParser.java`
+- `src/Statement.java`
+- `src/CreateTableStatement.java`
+- `src/DropTableStatement.java`
+- `src/CreateIndexStatement.java`
+- `src/DropIndexStatement.java`
+- `src/InsertStatement.java`
+- `src/SelectStatement.java`
+- `src/UpdateStatement.java`
+- `src/DeleteStatement.java`
+- `src/DescribeTableStatement.java`
+- `src/ExplainStatement.java`
+- `src/ShowTablesStatement.java`
+- `src/ShowIndexesStatement.java`
 
 Как закоммитить часть Егора:
 
 ```bash
-git clone https://github.com/DanislonZombovich/simple-dbms.git
-cd simple-dbms
+git clone https://github.com/DanislonZombovich/simple-rdbms.git
+cd simple-rdbms
 git pull origin main
 
-# Скопировать перечисленные 22 файла из проекта java-lab2, затем:
-git add src/main/java/ru/danis/dbms/model/QueryResult.java \
-        src/main/java/ru/danis/dbms/index/ \
-        src/main/java/ru/danis/dbms/parser/
+# Скопировать перечисленные 22 файла из каталога src проекта java-lab2 в каталог src, затем:
+git add src/QueryResult.java \
+        src/Index.java \
+        src/BTreeIndex.java \
+        src/TokenType.java \
+        src/Token.java \
+        src/SqlLexer.java \
+        src/ComparisonOperator.java \
+        src/Condition.java \
+        src/SqlParser.java \
+        src/Statement.java \
+        src/CreateTableStatement.java \
+        src/DropTableStatement.java \
+        src/CreateIndexStatement.java \
+        src/DropIndexStatement.java \
+        src/InsertStatement.java \
+        src/SelectStatement.java \
+        src/UpdateStatement.java \
+        src/DeleteStatement.java \
+        src/DescribeTableStatement.java \
+        src/ExplainStatement.java \
+        src/ShowTablesStatement.java \
+        src/ShowIndexesStatement.java
 git commit -m "feat(index,parser): implement B-Tree index, SQL lexer, parser, and statement AST"
 git push origin main
 ```
 
 ### Участник 3: Максим Жулин
 
-Зона ответственности: движок выполнения `QueryEngine`, планы `IndexScanPlan` и `SeqScanPlan`, табличный вывод в консоль, REPL `ConsoleApp`, окно Swing `DatabaseGui`, `BenchmarkRunner`, точка входа `Main` и 7 тестовых классов JUnit 5.
+Зона ответственности: оптимизатор и исполнитель запросов `QueryEngine`, планы выполнения `IndexScanPlan` и `SeqScanPlan`, консольный вывод `TablePrinter`, текстовый интерфейс `ConsoleApp`, графический интерфейс Swing `DatabaseGui`, нагрузочный модуль `BenchmarkRunner`, класс точки входа `Main` и 7 классов тестов JUnit 5.
 
-Список файлов (9 основных и 7 тестовых Java-файлов):
-- `src/main/java/ru/danis/dbms/engine/ExecutionPlan.java`
-- `src/main/java/ru/danis/dbms/engine/SeqScanPlan.java`
-- `src/main/java/ru/danis/dbms/engine/IndexScanPlan.java`
-- `src/main/java/ru/danis/dbms/engine/QueryEngine.java`
-- `src/main/java/ru/danis/dbms/cli/TablePrinter.java`
-- `src/main/java/ru/danis/dbms/cli/ConsoleApp.java`
-- `src/main/java/ru/danis/dbms/gui/DatabaseGui.java`
-- `src/main/java/ru/danis/dbms/benchmark/BenchmarkRunner.java`
-- `src/main/java/ru/danis/dbms/Main.java`
-- `src/test/java/ru/danis/dbms/DataTypeTest.java`
-- `src/test/java/ru/danis/dbms/BTreeIndexTest.java`
-- `src/test/java/ru/danis/dbms/SqlParserTest.java`
-- `src/test/java/ru/danis/dbms/StorageEngineTest.java`
-- `src/test/java/ru/danis/dbms/ForeignKeyTest.java`
-- `src/test/java/ru/danis/dbms/QueryEngineTest.java`
-- `src/test/java/ru/danis/dbms/EdgeCaseAndIntegrityTest.java`
+Список файлов (9 исходных файлов в `src/` и 7 тестовых файлов в `test/`):
+- `src/ExecutionPlan.java`
+- `src/SeqScanPlan.java`
+- `src/IndexScanPlan.java`
+- `src/QueryEngine.java`
+- `src/TablePrinter.java`
+- `src/ConsoleApp.java`
+- `src/DatabaseGui.java`
+- `src/BenchmarkRunner.java`
+- `src/Main.java`
+- `test/DataTypeTest.java`
+- `test/BTreeIndexTest.java`
+- `test/SqlParserTest.java`
+- `test/StorageEngineTest.java`
+- `test/ForeignKeyTest.java`
+- `test/QueryEngineTest.java`
+- `test/EdgeCaseAndIntegrityTest.java`
 
 Как закоммитить часть Максима (после того как Егор отправит свои файлы):
 
 ```bash
-git clone https://github.com/DanislonZombovich/simple-dbms.git
-cd simple-dbms
+git clone https://github.com/DanislonZombovich/simple-rdbms.git
+cd simple-rdbms
 git pull origin main
 
-# Скопировать перечисленные 16 файлов из проекта java-lab2 и проверить тесты:
+# Скопировать 9 файлов в src и 7 тестовых файлов в test из java-lab2, затем проверить тесты:
 mvn clean test
 
-git add src/main/java/ru/danis/dbms/engine/ \
-        src/main/java/ru/danis/dbms/cli/ \
-        src/main/java/ru/danis/dbms/gui/ \
-        src/main/java/ru/danis/dbms/benchmark/ \
-        src/main/java/ru/danis/dbms/Main.java \
-        src/test/java/ru/danis/dbms/
+git add src/ExecutionPlan.java \
+        src/SeqScanPlan.java \
+        src/IndexScanPlan.java \
+        src/QueryEngine.java \
+        src/TablePrinter.java \
+        src/ConsoleApp.java \
+        src/DatabaseGui.java \
+        src/BenchmarkRunner.java \
+        src/Main.java \
+        test/
 git commit -m "feat(engine,ui,tests): add query engine, CLI/GUI, benchmark, and test suite"
 git push origin main
 ```
