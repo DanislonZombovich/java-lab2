@@ -361,7 +361,9 @@ git clone https://github.com/DanislonZombovich/simple-rdbms.git
 cd simple-rdbms
 git pull origin main
 
-# Скопировать перечисленные 22 файла из каталога src проекта java-lab2 в каталог src, затем:
+# Скопировать перечисленные 22 файла из каталога src проекта java-lab2 в каталог src, затем проверить компиляцию:
+mvn compile
+
 git add src/QueryResult.java \
         src/Index.java \
         src/BTreeIndex.java \
