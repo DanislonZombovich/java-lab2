@@ -14,16 +14,29 @@ import ru.danis.dbms.storage.WalEntry;
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * Database-level repository coordinating tables, schemas, relations, and transactional integrity.
+ */
 public class DatabaseRepository {
 
     private final StorageEngine storageEngine;
     private final Map<String, TableRepository> tables;
 
+    /**
+     * Creates a database coordinator over the given storage engine.
+     *
+     * @param storageEngine persistence engine
+     */
     public DatabaseRepository(StorageEngine storageEngine) {
         this.storageEngine = Objects.requireNonNull(storageEngine, "storageEngine cannot be null");
         this.tables = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
     }
 
+    /**
+     * Initializes storage, loads schemas/rows/indexes, and reconciles indexes after unclean shutdown.
+     *
+     * @throws IOException if storage loading fails
+     */
     public synchronized void initialize() throws IOException {
         storageEngine.initialize();
         List<WalEntry> pendingWal = storageEngine.readWalEntries();
@@ -53,10 +66,22 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Checks if a table exists.
+     *
+     * @param tableName table name
+     * @return true if present
+     */
     public synchronized boolean hasTable(String tableName) {
         return tables.containsKey(tableName);
     }
 
+    /**
+     * Retrieves a table repository or throws if absent.
+     *
+     * @param tableName table name
+     * @return TableRepository instance
+     */
     public synchronized TableRepository getTable(String tableName) {
         TableRepository repo = tables.get(tableName);
         if (repo == null) {
@@ -65,10 +90,21 @@ public class DatabaseRepository {
         return repo;
     }
 
+    /**
+     * Returns a list of all registered table names.
+     *
+     * @return list of registered table names
+     */
     public synchronized List<String> getTableNames() {
         return new ArrayList<>(tables.keySet());
     }
 
+    /**
+     * Creates a new table and persists its empty state.
+     *
+     * @param schema table schema definition
+     * @throws IOException if disk persistence fails
+     */
     public synchronized void createTable(TableSchema schema) throws IOException {
         String name = schema.getTableName();
         if (hasTable(name)) {
@@ -94,6 +130,12 @@ public class DatabaseRepository {
         storageEngine.saveTable(schema, Collections.emptyList());
     }
 
+    /**
+     * Drops an existing table if no child table references it.
+     *
+     * @param tableName table name
+     * @throws IOException if disk cleanup fails
+     */
     public synchronized void dropTable(String tableName) throws IOException {
         getTable(tableName);
 
@@ -114,6 +156,14 @@ public class DatabaseRepository {
         storageEngine.dropTable(tableName);
     }
 
+    /**
+     * Creates and persists a B-Tree index on a table column.
+     *
+     * @param indexName  unique index name
+     * @param tableName  target table name
+     * @param columnName target column name
+     * @throws IOException if persistence fails
+     */
     public synchronized void createIndex(String indexName, String tableName, String columnName) throws IOException {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
@@ -130,6 +180,12 @@ public class DatabaseRepository {
         repo.addIndex(index);
     }
 
+    /**
+     * Drops an index by name across registered tables.
+     *
+     * @param indexName index name
+     * @throws IOException if disk cleanup fails
+     */
     public synchronized void dropIndex(String indexName) throws IOException {
         boolean found = false;
         for (TableRepository repo : tables.values()) {
@@ -145,6 +201,12 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Validates foreign key references before inserting a row.
+     *
+     * @param tableName target table name
+     * @param row       row being inserted
+     */
     public synchronized void validateForeignKeysOnInsert(String tableName, Row row) {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
@@ -180,6 +242,13 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Validates foreign key integrity for both child references and parent mutations on update.
+     *
+     * @param tableName target table name
+     * @param condition filter predicate or null
+     * @param newValues proposed column updates
+     */
     public synchronized void validateForeignKeysOnUpdate(String tableName, Condition condition, Map<String, Object> newValues) {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
@@ -256,6 +325,12 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Validates that deleting matching rows will not violate child table foreign keys.
+     *
+     * @param tableName target table name
+     * @param condition filter predicate or null
+     */
     public synchronized void validateForeignKeysOnDelete(String tableName, Condition condition) {
         TableRepository repo = getTable(tableName);
         TableSchema schema = repo.getSchema();
@@ -297,6 +372,11 @@ public class DatabaseRepository {
         }
     }
 
+    /**
+     * Performs a clean shutdown checkpoint on the underlying storage engine.
+     *
+     * @throws IOException if checkpoint fails
+     */
     public synchronized void close() throws IOException {
         storageEngine.close();
     }

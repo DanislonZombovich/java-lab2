@@ -4,6 +4,9 @@ import ru.danis.dbms.model.DataType;
 
 import java.util.*;
 
+/**
+ * Balanced B-Tree index implementation for database columns.
+ */
 public class BTreeIndex implements Index {
 
     private static final int DEGREE = 8;
@@ -15,6 +18,14 @@ public class BTreeIndex implements Index {
     private BTreeNode root;
     private int size;
 
+    /**
+     * Creates a B-Tree index for a table column.
+     *
+     * @param name        index name
+     * @param tableName   table name
+     * @param columnName  indexed column name
+     * @param indexedType data type of indexed keys
+     */
     public BTreeIndex(String name, String tableName, String columnName, DataType indexedType) {
         this.name = Objects.requireNonNull(name, "name cannot be null");
         this.tableName = Objects.requireNonNull(tableName, "tableName cannot be null");

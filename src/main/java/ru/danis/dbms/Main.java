@@ -12,11 +12,19 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+/**
+ * Main application entry point for the Simple Relational DBMS.
+ */
 public class Main {
 
     private Main() {
     }
 
+    /**
+     * Application entry point supporting CLI, Swing GUI, demo initialization, and benchmark modes.
+     *
+     * @param args command-line arguments (--gui, --benchmark, --init-demo, --data &lt;path&gt;)
+     */
     public static void main(String[] args) {
         Path dataDir = Paths.get("data");
         boolean launchGui = false;

@@ -12,6 +12,9 @@ import ru.danis.dbms.storage.StorageEngine;
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * FileTableRepository implements TableRepository with in-memory caching and disk synchronization.
+ */
 public class FileTableRepository implements TableRepository {
 
     private final TableSchema schema;
@@ -21,6 +24,14 @@ public class FileTableRepository implements TableRepository {
     private final Map<String, Index> indexesByName;
     private final Map<String, Index> indexesByColumn;
 
+    /**
+     * Creates a file-backed table repository with preloaded rows and indexes.
+     *
+     * @param schema         table schema
+     * @param storageEngine  disk persistence engine
+     * @param initialRows    loaded table rows
+     * @param initialIndexes loaded secondary indexes
+     */
     public FileTableRepository(TableSchema schema, StorageEngine storageEngine, List<Row> initialRows, List<Index> initialIndexes) {
         this.schema = Objects.requireNonNull(schema, "schema cannot be null");
         this.storageEngine = Objects.requireNonNull(storageEngine, "storageEngine cannot be null");

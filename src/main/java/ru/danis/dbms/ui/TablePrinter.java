@@ -8,11 +8,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Utility for formatting database query results into aligned ASCII tables.
+ */
 public class TablePrinter {
 
     private TablePrinter() {
     }
 
+    /**
+     * Prints a formatted ASCII representation of the query result to the given stream.
+     *
+     * @param result execution result to display
+     * @param out target output stream
+     */
     public static void print(QueryResult result, PrintStream out) {
         if (!result.isSelect()) {
             out.printf(Locale.US, "OK. %s (affected: %d) [%.2f ms]%n",

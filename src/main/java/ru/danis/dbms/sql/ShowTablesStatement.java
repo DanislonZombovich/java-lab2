@@ -1,7 +1,13 @@
 package ru.danis.dbms.sql;
 
+/**
+ * Statement representing SHOW TABLES command.
+ */
 public class ShowTablesStatement implements Statement {
 
+    /**
+     * Creates a SHOW TABLES statement.
+     */
     public ShowTablesStatement() {
     }
 

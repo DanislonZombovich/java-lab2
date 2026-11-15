@@ -17,6 +17,9 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * File-based storage engine implementing atomic disk persistence, index serialization, and WAL.
+ */
 public class FileStorageEngine implements StorageEngine {
 
     private final Path baseDirectory;
@@ -28,6 +31,11 @@ public class FileStorageEngine implements StorageEngine {
     private final ObjectMapper mapper;
     private final AtomicLong walSequence = new AtomicLong(0);
 
+    /**
+     * Creates a file storage engine rooted at the specified directory.
+     *
+     * @param baseDirectory root data directory
+     */
     public FileStorageEngine(Path baseDirectory) {
         this.baseDirectory = Objects.requireNonNull(baseDirectory, "baseDirectory cannot be null");
         this.tablesDirectory = baseDirectory.resolve("tables");

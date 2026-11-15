@@ -4,12 +4,21 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.*;
 
+/**
+ * Defines the structural schema of a relational table.
+ */
 public class TableSchema {
     private final String tableName;
     private final List<Column> columns;
     private final Map<String, Column> columnLookup;
     private final String primaryKeyColumn;
 
+    /**
+     * Creates a table schema definition.
+     *
+     * @param tableName name of the table
+     * @param columns   ordered list of table columns
+     */
     @JsonCreator
     public TableSchema(
             @JsonProperty("tableName") String tableName,
@@ -44,22 +53,48 @@ public class TableSchema {
         this.primaryKeyColumn = pk;
     }
 
+    /**
+     * Returns the table name.
+     *
+     * @return table name
+     */
     public String getTableName() {
         return tableName;
     }
 
+    /**
+     * Returns the ordered unmodifiable list of table columns.
+     *
+     * @return unmodifiable list of columns
+     */
     public List<Column> getColumns() {
         return columns;
     }
 
+    /**
+     * Returns the primary key column name, or null if none is defined.
+     *
+     * @return primary key column name or null
+     */
     public String getPrimaryKeyColumn() {
         return primaryKeyColumn;
     }
 
+    /**
+     * Returns whether this table defines a primary key column.
+     *
+     * @return true if table defines a primary key
+     */
     public boolean hasPrimaryKey() {
         return primaryKeyColumn != null;
     }
 
+    /**
+     * Looks up a column by case-insensitive name.
+     *
+     * @param name column name
+     * @return matching Column or null
+     */
     public Column getColumn(String name) {
         if (name == null) {
             return null;
@@ -67,6 +102,12 @@ public class TableSchema {
         return columnLookup.get(name);
     }
 
+    /**
+     * Checks whether a column exists in this schema.
+     *
+     * @param name column name
+     * @return true if column exists
+     */
     public boolean hasColumn(String name) {
         if (name == null) {
             return false;
@@ -74,6 +115,12 @@ public class TableSchema {
         return columnLookup.containsKey(name);
     }
 
+    /**
+     * Returns the zero-based position of a column.
+     *
+     * @param name column name
+     * @return column index or -1 if absent
+     */
     public int getColumnIndex(String name) {
         if (name == null) {
             return -1;

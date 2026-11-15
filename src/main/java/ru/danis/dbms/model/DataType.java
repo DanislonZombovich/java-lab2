@@ -4,20 +4,29 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 
+/**
+ * Enumeration of supported database column data types.
+ */
 public enum DataType {
-
+    /** Signed 64-bit integer type. */
     INT,
-
+    /** Double-precision floating-point type. */
     DOUBLE,
-
+    /** Variable-length character string type. */
     VARCHAR,
-
+    /** Calendar date type in ISO-8601 format (YYYY-MM-DD). */
     DATE,
-
+    /** Boolean logical type (true/false). */
     BOOLEAN;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
+    /**
+     * Resolves a string identifier to DataType enum.
+     *
+     * @param typeName string name of the type
+     * @return corresponding DataType
+     */
     public static DataType fromString(String typeName) {
         if (typeName == null) {
             throw new IllegalArgumentException("Type name cannot be null");
@@ -33,6 +42,12 @@ public enum DataType {
         };
     }
 
+    /**
+     * Parses a string literal into an instance of this type.
+     *
+     * @param raw input string value
+     * @return typed object instance
+     */
     public Object parse(String raw) {
         if (raw == null) {
             return null;
@@ -76,6 +91,12 @@ public enum DataType {
         }
     }
 
+    /**
+     * Casts or converts an existing object to match this column's type.
+     *
+     * @param value source value
+     * @return converted typed object
+     */
     public Object cast(Object value) {
         if (value == null) {
             return null;
@@ -115,6 +136,13 @@ public enum DataType {
         };
     }
 
+    /**
+     * Compares two objects of this data type.
+     *
+     * @param o1 first object
+     * @param o2 second object
+     * @return comparison result (-1, 0, 1)
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public int compareValues(Object o1, Object o2) {
         if (o1 == null && o2 == null) {
