@@ -55,6 +55,15 @@ public class DatabaseGui extends JFrame {
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
             @Override
+            public void windowClosing(WindowEvent e) {
+                try {
+                    repository.close();
+                } catch (IOException ex) {
+                    System.err.println("Error while closing repository: " + ex.getMessage());
+                }
+            }
+
+            @Override
             public void windowClosed(WindowEvent e) {
                 try {
                     repository.close();

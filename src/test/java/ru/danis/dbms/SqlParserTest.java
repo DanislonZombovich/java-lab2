@@ -147,5 +147,18 @@ public class SqlParserTest {
         DropIndexStatement didx2 = (DropIndexStatement) p4.parse();
         assertEquals("idx_cars_brand", didx2.getIndexName());
         assertTrue(didx2.isIfExists());
+        assertEquals("cars", didx2.getTableName());
+    }
+
+    @Test
+    @DisplayName("Test number literals with plus, leading dot, scientific notation, and multiple semicolons")
+    void testNumberLiteralsAndMultipleSemicolons() {
+        String sql = "INSERT INTO measurements VALUES (+10, .75, 1e4);;;";
+        SqlParser parser = new SqlParser(sql);
+        Statement stmt = parser.parse();
+
+        assertInstanceOf(InsertStatement.class, stmt);
+        InsertStatement ins = (InsertStatement) stmt;
+        assertEquals(List.of("10", ".75", "1e4"), ins.getRowsValues().get(0));
     }
 }

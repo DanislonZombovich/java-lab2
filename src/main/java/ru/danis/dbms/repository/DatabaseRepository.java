@@ -114,10 +114,14 @@ public class DatabaseRepository {
         for (Column col : schema.getColumns()) {
             if (col.hasForeignKey()) {
                 ForeignKey fk = col.getForeignKey();
-                if (!hasTable(fk.getTargetTable())) {
+                TableSchema targetSchema;
+                if (fk.getTargetTable().equalsIgnoreCase(name)) {
+                    targetSchema = schema;
+                } else if (hasTable(fk.getTargetTable())) {
+                    targetSchema = getTable(fk.getTargetTable()).getSchema();
+                } else {
                     throw new IllegalArgumentException("Referenced table '" + fk.getTargetTable() + "' does not exist");
                 }
-                TableSchema targetSchema = getTable(fk.getTargetTable()).getSchema();
                 if (!targetSchema.hasColumn(fk.getTargetColumn())) {
                     throw new IllegalArgumentException("Referenced column '" + fk.getTargetColumn() + "' does not exist in table '" + fk.getTargetTable() + "'");
                 }
@@ -187,6 +191,27 @@ public class DatabaseRepository {
      * @throws IOException if disk cleanup fails
      */
     public synchronized void dropIndex(String indexName) throws IOException {
+        dropIndex(indexName, null);
+    }
+
+    /**
+     * Drops an index by name optionally scoped to a target table.
+     *
+     * @param indexName index name
+     * @param tableName optional target table name
+     * @throws IOException if disk cleanup fails
+     */
+    public synchronized void dropIndex(String indexName, String tableName) throws IOException {
+        if (tableName != null) {
+            TableRepository repo = getTable(tableName);
+            if (repo.getIndex(indexName) == null) {
+                throw new IllegalArgumentException("Index '" + indexName + "' not found on table '" + tableName + "'");
+            }
+            storageEngine.appendWal("DROP_INDEX", repo.getSchema().getTableName(), indexName);
+            repo.removeIndex(indexName);
+            return;
+        }
+
         boolean found = false;
         for (TableRepository repo : tables.values()) {
             if (repo.getIndex(indexName) != null) {
@@ -297,9 +322,7 @@ public class DatabaseRepository {
         }
 
         for (TableRepository childRepo : tables.values()) {
-            if (childRepo.getSchema().getTableName().equalsIgnoreCase(tableName)) {
-                continue;
-            }
+            boolean isSelf = childRepo.getSchema().getTableName().equalsIgnoreCase(tableName);
             TableSchema childSchema = childRepo.getSchema();
             for (Column childCol : childSchema.getColumns()) {
                 if (childCol.hasForeignKey() && childCol.getForeignKey().getTargetTable().equalsIgnoreCase(tableName)) {
@@ -311,10 +334,13 @@ public class DatabaseRepository {
                         for (Row parentRow : matchingRows) {
                             Object oldVal = parentRow.get(referencedCol);
                             if (oldVal != null && (newTargetVal == null || refType.compareValues(oldVal, newTargetVal) != 0)) {
-                                for (Row childRow : childRepo.findAll()) {
+                                List<Row> childCandidateRows = isSelf ?
+                                        repo.findAll().stream().filter(r -> !matchingRows.contains(r)).toList() :
+                                        childRepo.findAll();
+                                for (Row childRow : childCandidateRows) {
                                     Object childVal = childRow.get(childCol.getName());
                                     if (childVal != null && refType.compareValues(oldVal, childVal) == 0) {
-                                        throw new IllegalStateException("Foreign key violation: Cannot update " + referencedCol + " in table '" + tableName + "' because child table '" + childSchema.getTableName() + "' references it");
+                                        throw new IllegalStateException("Foreign key violation: Cannot update " + referencedCol + " in table '" + tableName + "' because " + (isSelf ? "another record in the same table" : "child table '" + childSchema.getTableName() + "'") + " references it");
                                     }
                                 }
                             }
@@ -347,9 +373,7 @@ public class DatabaseRepository {
         }
 
         for (TableRepository childRepo : tables.values()) {
-            if (childRepo.getSchema().getTableName().equalsIgnoreCase(tableName)) {
-                continue;
-            }
+            boolean isSelf = childRepo.getSchema().getTableName().equalsIgnoreCase(tableName);
             TableSchema childSchema = childRepo.getSchema();
             for (Column childCol : childSchema.getColumns()) {
                 if (childCol.hasForeignKey() && childCol.getForeignKey().getTargetTable().equalsIgnoreCase(tableName)) {
@@ -359,10 +383,13 @@ public class DatabaseRepository {
                     for (Row parentRow : rowsToDelete) {
                         Object parentVal = parentRow.get(referencedCol);
                         if (parentVal != null) {
-                            for (Row childRow : childRepo.findAll()) {
+                            List<Row> childCandidateRows = isSelf ?
+                                    repo.findAll().stream().filter(r -> !rowsToDelete.contains(r)).toList() :
+                                    childRepo.findAll();
+                            for (Row childRow : childCandidateRows) {
                                 Object childVal = childRow.get(childCol.getName());
                                 if (childVal != null && refType.compareValues(parentVal, childVal) == 0) {
-                                    throw new IllegalStateException("Foreign key violation: Cannot delete record with " + referencedCol + "=" + parentVal + " from table '" + tableName + "' because child table '" + childSchema.getTableName() + "' references it");
+                                    throw new IllegalStateException("Foreign key violation: Cannot delete record with " + referencedCol + "=" + parentVal + " from table '" + tableName + "' because " + (isSelf ? "another record in the same table" : "child table '" + childSchema.getTableName() + "'") + " references it");
                                 }
                             }
                         }

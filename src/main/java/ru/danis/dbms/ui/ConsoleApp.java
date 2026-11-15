@@ -91,7 +91,8 @@ public class ConsoleApp {
             }
 
             buffer.append(line).append("\n");
-            if (line.endsWith(";")) {
+            String lineWithoutComment = line.replaceAll("--.*$", "").trim();
+            if (lineWithoutComment.endsWith(";")) {
                 String query = buffer.toString().trim();
                 buffer.setLength(0);
                 executeQuery(query);

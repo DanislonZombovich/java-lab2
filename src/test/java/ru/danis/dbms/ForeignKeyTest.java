@@ -77,4 +77,49 @@ public class ForeignKeyTest {
         });
         assertTrue(ex.getMessage().contains("Cannot drop table"));
     }
+
+    @Test
+    @DisplayName("Test self-referencing foreign key creation, insertion, and delete constraint enforcement")
+    void testSelfReferencingForeignKey() {
+        assertDoesNotThrow(() -> {
+            engine.execute("CREATE TABLE categories (id INT PRIMARY KEY, name VARCHAR, parent_id INT REFERENCES categories(id));");
+        });
+
+        assertDoesNotThrow(() -> {
+            engine.execute("INSERT INTO categories VALUES (1, 'Electronics', NULL);");
+            engine.execute("INSERT INTO categories VALUES (2, 'Laptops', 1);");
+        });
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            engine.execute("INSERT INTO categories VALUES (3, 'Phones', 999);");
+        });
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> {
+            engine.execute("DELETE FROM categories WHERE id = 1;");
+        });
+        assertTrue(ex.getMessage().contains("Foreign key violation"));
+
+        assertDoesNotThrow(() -> {
+            engine.execute("DELETE FROM categories WHERE id = 2;");
+            engine.execute("DELETE FROM categories WHERE id = 1;");
+        });
+        assertEquals(0, engine.execute("SELECT * FROM categories;").getRows().size());
+    }
+
+    @Test
+    @DisplayName("Test table-level PRIMARY KEY and FOREIGN KEY constraint definitions in CREATE TABLE")
+    void testTableLevelConstraints() {
+        assertDoesNotThrow(() -> {
+            engine.execute("CREATE TABLE departments (id INT, title VARCHAR, PRIMARY KEY (id));");
+            engine.execute("CREATE TABLE staff (id INT, name VARCHAR, dept_id INT, PRIMARY KEY (id), FOREIGN KEY (dept_id) REFERENCES departments(id));");
+        });
+
+        engine.execute("INSERT INTO departments VALUES (10, 'Engineering');");
+        engine.execute("INSERT INTO staff VALUES (1, 'Alice', 10);");
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            engine.execute("INSERT INTO staff VALUES (2, 'Bob', 99);");
+        });
+        assertEquals(1, engine.execute("SELECT * FROM staff;").getRows().size());
+    }
 }

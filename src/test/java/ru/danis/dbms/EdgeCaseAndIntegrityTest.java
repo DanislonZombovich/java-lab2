@@ -635,4 +635,27 @@ public class EdgeCaseAndIntegrityTest {
             Locale.setDefault(previous);
         }
     }
+
+    @Test
+    @DisplayName("DROP INDEX ON table validates specified table and rejects mismatching table")
+    void testDropIndexScopedToTable(@TempDir Path tempDir) throws IOException {
+        FileStorageEngine storage = new FileStorageEngine(tempDir);
+        DatabaseRepository repo = new DatabaseRepository(storage);
+        repo.initialize();
+        QueryEngine engine = new QueryEngine(repo);
+
+        engine.execute("CREATE TABLE cars (id INT PRIMARY KEY, brand VARCHAR);");
+        engine.execute("CREATE TABLE bikes (id INT PRIMARY KEY, model VARCHAR);");
+        engine.execute("CREATE INDEX idx_cars ON cars (brand);");
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            engine.execute("DROP INDEX idx_cars ON bikes;");
+        });
+
+        assertDoesNotThrow(() -> {
+            engine.execute("DROP INDEX idx_cars ON cars;");
+        });
+        assertNull(repo.getTable("cars").getIndex("idx_cars"));
+        repo.close();
+    }
 }

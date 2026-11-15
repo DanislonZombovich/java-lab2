@@ -12,7 +12,7 @@ public class SqlLexer {
             "INSERT", "INTO", "VALUES", "SELECT", "FROM",
             "WHERE", "UPDATE", "SET", "DELETE",
             "SHOW", "TABLES", "DESCRIBE", "DESC", "EXPLAIN",
-            "PRIMARY", "KEY", "REFERENCES", "IF", "NOT", "EXISTS",
+            "PRIMARY", "KEY", "FOREIGN", "REFERENCES", "IF", "NOT", "EXISTS",
             "AND", "OR", "IS", "NULL",
             "INT", "INTEGER", "DOUBLE", "FLOAT", "VARCHAR", "TEXT", "DATE", "BOOLEAN"
     );
@@ -99,7 +99,9 @@ public class SqlLexer {
             } else if (ch == '=') {
                 tokens.add(new Token(TokenType.OPERATOR, "=", startPos));
                 cursor++;
-            } else if (Character.isDigit(ch) || (ch == '-' && Character.isDigit(peek()))) {
+            } else if (Character.isDigit(ch) || ((ch == '-' || ch == '+') && Character.isDigit(peek()))) {
+                tokens.add(tokenizeNumber(startPos));
+            } else if (ch == '.' && Character.isDigit(peek())) {
                 tokens.add(tokenizeNumber(startPos));
             } else if (Character.isLetter(ch) || ch == '_') {
                 tokens.add(tokenizeWord(startPos));
@@ -153,8 +155,11 @@ public class SqlLexer {
 
     private Token tokenizeNumber(int startPos) {
         StringBuilder sb = new StringBuilder();
-        if (source.charAt(cursor) == '-') {
-            sb.append('-');
+        char first = source.charAt(cursor);
+        if (first == '-' || first == '+') {
+            if (first == '-') {
+                sb.append('-');
+            }
             cursor++;
         }
 
@@ -168,6 +173,18 @@ public class SqlLexer {
                 hasDot = true;
                 sb.append('.');
                 cursor++;
+            } else if ((ch == 'e' || ch == 'E') && cursor + 1 < length) {
+                char next = source.charAt(cursor + 1);
+                if (Character.isDigit(next) || ((next == '+' || next == '-') && cursor + 2 < length && Character.isDigit(source.charAt(cursor + 2)))) {
+                    sb.append(ch);
+                    cursor++;
+                    if (source.charAt(cursor) == '+' || source.charAt(cursor) == '-') {
+                        sb.append(source.charAt(cursor));
+                        cursor++;
+                    }
+                } else {
+                    break;
+                }
             } else {
                 break;
             }

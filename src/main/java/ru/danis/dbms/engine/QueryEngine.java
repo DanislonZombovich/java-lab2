@@ -133,7 +133,7 @@ public class QueryEngine {
 
     private QueryResult handleDropIndex(DropIndexStatement stmt, long startNs) throws IOException {
         try {
-            databaseRepository.dropIndex(stmt.getIndexName());
+            databaseRepository.dropIndex(stmt.getIndexName(), stmt.getTableName());
             return QueryResult.forMutation(0, System.nanoTime() - startNs, "Index '" + stmt.getIndexName() + "' dropped successfully");
         } catch (IllegalArgumentException e) {
             if (stmt.isIfExists()) {

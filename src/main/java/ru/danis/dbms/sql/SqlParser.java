@@ -33,7 +33,9 @@ public class SqlParser {
      */
     public Statement parse() {
         Statement stmt = parseStatement();
-        match(TokenType.SEMICOLON);
+        while (match(TokenType.SEMICOLON)) {
+            // absorb optional trailing semicolons
+        }
         if (!check(TokenType.EOF)) {
             throw new IllegalArgumentException("Unexpected trailing token at position " + peek().getPosition() + ": " + peek().getValue());
         }
@@ -100,10 +102,11 @@ public class SqlParser {
                 ifExists = true;
             }
             String indexName = consumeIdentifierOrKeyword();
+            String tableName = null;
             if (matchKeyword("ON")) {
-                consumeIdentifierOrKeyword();
+                tableName = consumeIdentifierOrKeyword();
             }
-            return new DropIndexStatement(indexName, ifExists);
+            return new DropIndexStatement(indexName, tableName, ifExists);
         }
         throw new IllegalArgumentException("Expected TABLE or INDEX after DROP, found: " + peek().getValue());
     }
@@ -120,46 +123,86 @@ public class SqlParser {
         consume(TokenType.LPAREN, "Expected '(' after table name");
 
         List<Column> columns = new ArrayList<>();
+        Map<String, ForeignKey> tableFks = new LinkedHashMap<>();
+        String tablePk = null;
 
         do {
-            String colName = consumeIdentifierOrKeyword();
-            String typeName = consumeIdentifierOrKeyword();
-            DataType type = DataType.fromString(typeName);
+            if (matchKeyword("PRIMARY")) {
+                consumeKeyword("KEY");
+                consume(TokenType.LPAREN, "Expected '(' after PRIMARY KEY");
+                tablePk = consumeIdentifierOrKeyword();
+                consume(TokenType.RPAREN, "Expected ')' after primary key column name");
+            } else if (matchKeyword("FOREIGN")) {
+                consumeKeyword("KEY");
+                consume(TokenType.LPAREN, "Expected '(' after FOREIGN KEY");
+                String fkCol = consumeIdentifierOrKeyword();
+                consume(TokenType.RPAREN, "Expected ')' after foreign key column name");
+                consumeKeyword("REFERENCES");
+                String refTable = consumeIdentifierOrKeyword();
+                consume(TokenType.LPAREN, "Expected '(' after referenced table name");
+                String refCol = consumeIdentifierOrKeyword();
+                consume(TokenType.RPAREN, "Expected ')' after referenced column name");
+                tableFks.put(fkCol, new ForeignKey(refTable, refCol));
+            } else {
+                String colName = consumeIdentifierOrKeyword();
+                String typeName = consumeIdentifierOrKeyword();
+                DataType type = DataType.fromString(typeName);
 
-            if (match(TokenType.LPAREN)) {
-                consume(TokenType.NUMBER_LITERAL, "Expected type length or precision");
-                if (match(TokenType.COMMA)) {
-                    consume(TokenType.NUMBER_LITERAL, "Expected type scale");
+                if (match(TokenType.LPAREN)) {
+                    consume(TokenType.NUMBER_LITERAL, "Expected type length or precision");
+                    if (match(TokenType.COMMA)) {
+                        consume(TokenType.NUMBER_LITERAL, "Expected type scale");
+                    }
+                    consume(TokenType.RPAREN, "Expected ')' after type length");
                 }
-                consume(TokenType.RPAREN, "Expected ')' after type length");
-            }
 
-            boolean primaryKey = false;
-            boolean notNull = false;
-            ForeignKey fk = null;
+                boolean primaryKey = false;
+                boolean notNull = false;
+                ForeignKey fk = null;
 
-            while (true) {
-                if (matchKeyword("PRIMARY")) {
-                    consumeKeyword("KEY");
-                    primaryKey = true;
-                } else if (matchKeyword("NOT")) {
-                    consumeKeyword("NULL");
-                    notNull = true;
-                } else if (matchKeyword("REFERENCES")) {
-                    String refTable = consumeIdentifierOrKeyword();
-                    consume(TokenType.LPAREN, "Expected '(' after referenced table name");
-                    String refCol = consumeIdentifierOrKeyword();
-                    consume(TokenType.RPAREN, "Expected ')' after referenced column name");
-                    fk = new ForeignKey(refTable, refCol);
-                } else {
-                    break;
+                while (true) {
+                    if (matchKeyword("PRIMARY")) {
+                        consumeKeyword("KEY");
+                        primaryKey = true;
+                    } else if (matchKeyword("NOT")) {
+                        consumeKeyword("NULL");
+                        notNull = true;
+                    } else if (matchKeyword("REFERENCES")) {
+                        String refTable = consumeIdentifierOrKeyword();
+                        consume(TokenType.LPAREN, "Expected '(' after referenced table name");
+                        String refCol = consumeIdentifierOrKeyword();
+                        consume(TokenType.RPAREN, "Expected ')' after referenced column name");
+                        fk = new ForeignKey(refTable, refCol);
+                    } else {
+                        break;
+                    }
                 }
-            }
 
-            columns.add(new Column(colName, type, primaryKey, !notNull && !primaryKey, fk));
+                columns.add(new Column(colName, type, primaryKey, !notNull && !primaryKey, fk));
+            }
         } while (match(TokenType.COMMA));
 
         consume(TokenType.RPAREN, "Expected ')' at end of column definitions");
+
+        if (tablePk != null || !tableFks.isEmpty()) {
+            List<Column> updated = new ArrayList<>(columns.size());
+            for (Column c : columns) {
+                boolean isPk = c.isPrimaryKey() || (tablePk != null && c.getName().equalsIgnoreCase(tablePk));
+                ForeignKey fk = c.getForeignKey() != null ? c.getForeignKey() : tableFks.get(c.getName());
+                if (fk == null) {
+                    for (Map.Entry<String, ForeignKey> e : tableFks.entrySet()) {
+                        if (e.getKey().equalsIgnoreCase(c.getName())) {
+                            fk = e.getValue();
+                            break;
+                        }
+                    }
+                }
+                boolean nullable = isPk ? false : c.isNullable();
+                updated.add(new Column(c.getName(), c.getType(), isPk, nullable, fk));
+            }
+            columns = updated;
+        }
+
         return new CreateTableStatement(new TableSchema(tableName, columns), ifNotExists);
     }
 

@@ -7,6 +7,7 @@ import java.util.Objects;
  */
 public class DropIndexStatement implements Statement {
     private final String indexName;
+    private final String tableName;
     private final boolean ifExists;
 
     /**
@@ -16,7 +17,19 @@ public class DropIndexStatement implements Statement {
      * @param ifExists whether IF EXISTS was specified
      */
     public DropIndexStatement(String indexName, boolean ifExists) {
+        this(indexName, null, ifExists);
+    }
+
+    /**
+     * Creates a DROP INDEX statement with an optional target table.
+     *
+     * @param indexName name of the index to drop
+     * @param tableName optional target table name
+     * @param ifExists whether IF EXISTS was specified
+     */
+    public DropIndexStatement(String indexName, String tableName, boolean ifExists) {
         this.indexName = Objects.requireNonNull(indexName, "indexName cannot be null");
+        this.tableName = tableName;
         this.ifExists = ifExists;
     }
 
@@ -27,6 +40,15 @@ public class DropIndexStatement implements Statement {
      */
     public String getIndexName() {
         return indexName;
+    }
+
+    /**
+     * Returns the optional table name specified in ON clause.
+     *
+     * @return table name or null if omitted
+     */
+    public String getTableName() {
+        return tableName;
     }
 
     /**
