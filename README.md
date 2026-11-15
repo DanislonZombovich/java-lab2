@@ -414,7 +414,7 @@ git clone https://github.com/DanislonZombovich/simple-db.git
 cd simple-db
 git pull origin main
 
-# Скопировать каталоги engine, ui, файлы Main.java, BenchmarkRunner.java и каталог src/test из java-lab2, затем проверить тесты:
+# Скопировать каталоги engine, ui, файлы Main.java, BenchmarkRunner.java в src/main/java/ru/danis/dbms/ и каталог src/test из java-lab2, затем проверить тесты:
 mvn clean test
 
 git add src/main/java/ru/danis/dbms/engine \
