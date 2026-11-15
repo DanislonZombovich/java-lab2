@@ -1,34 +1,19 @@
-
-
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.Scanner;
 
-/**
- * Interactive Command-Line Interface (REPL) for the database management system.
- */
 public class ConsoleApp {
 
     private final QueryEngine engine;
     private final InputStream in;
     private final PrintStream out;
 
-    /**
-     * Creates a console REPL bound to the given engine and I/O streams.
-     *
-     * @param engine query execution engine
-     * @param in input stream for commands
-     * @param out output stream for results and prompts
-     */
     public ConsoleApp(QueryEngine engine, InputStream in, PrintStream out) {
         this.engine = engine;
         this.in = in;
         this.out = out;
     }
 
-    /**
-     * Starts the interactive console read-eval-print loop.
-     */
     public void start() {
         printBanner();
         Scanner scanner = new Scanner(in);
@@ -103,9 +88,6 @@ public class ConsoleApp {
         }
     }
 
-    /**
-     * Creates sample manufacturers and cars tables with foreign keys, initial rows, and an index.
-     */
     public void initDemoData() {
         out.println("Initializing sample relational tables and demo data...");
         try {

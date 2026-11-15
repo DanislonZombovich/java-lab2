@@ -220,10 +220,10 @@ sequenceDiagram
 mvn clean package
 ```
 
-Сборка Javadoc (проверяется со строгим `-Ddoclint=all` без предупреждений):
+Запуск тестов (все 49 тестов проверяют парсер, типы, хранилище, B-дерево и целостность):
 
 ```bash
-mvn javadoc:javadoc
+mvn test
 ```
 
 ### Запуск программы
@@ -301,11 +301,11 @@ DELETE FROM cars WHERE brand = 'Toyota';
 
 ## 5. Команда и распределение файлов для нового репозитория
 
-Для совместной сдачи подготовлен чистый репозиторий: `https://github.com/DanislonZombovich/simple-database`. В него переносятся все рабочие файлы проекта (2 конфигурационных, 43 исходных Java-файла в `src/` и 7 тестовых классов в `test/`), распределенные между тремя участниками. Настоящий файл `README.md` с отчетом по лабораторной работе остается в основном репозитории `java-lab2`, а в командный репозиторий файлы переносятся без README.
+Для совместной сдачи подготовлен чистый репозиторий: `https://github.com/DanislonZombovich/simple-db`. В него переносятся все рабочие файлы проекта (2 конфигурационных, 43 исходных Java-файла в `src/` и 7 тестовых классов в `test/`), распределенные между тремя участниками. Настоящий файл `README.md` с отчетом по лабораторной работе остается в основном репозитории `java-lab2`, а в командный репозиторий файлы переносятся без README.
 
 Порядок фиксации изменений учитывает связи между компонентами: классы хранилища и репозиториев используют `Index`, `BTreeIndex` и `Condition`. Сначала Даниил Егоров фиксирует базовую сборку и слой хранения, затем Егор Глазов добавляет парсер и B-дерево (после чего проект компилируется через `mvn compile`), а Максим Жулин завершает цепочку подключением планировщика, интерфейсов и тестов для успешной проверки `mvn clean package`.
 
-### Участник 1: Даниил Егоров (уже закоммичено в simple-database)
+### Участник 1: Даниил Егоров (закоммичено в simple-db)
 
 Зона ответственности: конфигурация сборки Maven, базовые модели данных и схемы, дисковое сохранение в JSON, атомарная запись через временные файлы, журнал предзаписи `wal.log`, восстановление целостности при старте и репозитории таблиц с контролем внешних ключей.
 
@@ -324,6 +324,10 @@ DELETE FROM cars WHERE brand = 'Toyota';
 - `src/TableRepository.java`
 - `src/FileTableRepository.java`
 - `src/DatabaseRepository.java`
+
+Зафиксировано двумя короткими коммитами:
+1. `add storage` (.gitignore, pom.xml, базовые модели и файловое хранилище)
+2. `add repositories` (репозитории таблиц и базы данных)
 
 ### Участник 2: Егор Глазов
 
@@ -356,8 +360,8 @@ DELETE FROM cars WHERE brand = 'Toyota';
 Как закоммитить часть Егора:
 
 ```bash
-git clone https://github.com/DanislonZombovich/simple-database.git
-cd simple-database
+git clone https://github.com/DanislonZombovich/simple-db.git
+cd simple-db
 git pull origin main
 
 # Скопировать перечисленные 22 файла из каталога src проекта java-lab2 в каталог src, затем проверить компиляцию:
@@ -385,7 +389,7 @@ git add src/QueryResult.java \
         src/ExplainStatement.java \
         src/ShowTablesStatement.java \
         src/ShowIndexesStatement.java
-git commit -m "feat(index,parser): implement B-Tree index, SQL lexer, parser, and statement AST"
+git commit -m "add index and parser"
 git push origin main
 ```
 
@@ -414,8 +418,8 @@ git push origin main
 Как закоммитить часть Максима (после того как Егор отправит свои файлы):
 
 ```bash
-git clone https://github.com/DanislonZombovich/simple-database.git
-cd simple-database
+git clone https://github.com/DanislonZombovich/simple-db.git
+cd simple-db
 git pull origin main
 
 # Скопировать 9 файлов в src и 7 тестовых файлов в test из java-lab2, затем проверить тесты:
@@ -431,7 +435,7 @@ git add src/ExecutionPlan.java \
         src/BenchmarkRunner.java \
         src/Main.java \
         test/
-git commit -m "feat(engine,ui,tests): add query engine, CLI/GUI, benchmark, and test suite"
+git commit -m "add engine and tests"
 git push origin main
 ```
 

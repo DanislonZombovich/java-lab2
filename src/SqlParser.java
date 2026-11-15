@@ -1,31 +1,16 @@
-
-
 import java.util.*;
 
-/**
- * Recursive descent SQL parser supporting DDL, DML, DCL, and query analysis statements.
- */
 public class SqlParser {
 
     private final List<Token> tokens;
     private int index;
 
-    /**
-     * Constructs a SQL parser for the given query text.
-     *
-     * @param sql raw SQL statement string
-     */
     public SqlParser(String sql) {
         SqlLexer lexer = new SqlLexer(sql);
         this.tokens = lexer.tokenize();
         this.index = 0;
     }
 
-    /**
-     * Parses a single SQL statement and ensures no unexpected trailing tokens remain.
-     *
-     * @return parsed AST {@link Statement}
-     */
     public Statement parse() {
         Statement stmt = parseStatement();
         match(TokenType.SEMICOLON);

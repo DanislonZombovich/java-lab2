@@ -1,10 +1,5 @@
-
-
 import java.util.*;
 
-/**
- * Execution plan leveraging B-Tree indexes for sub-linear record retrieval.
- */
 public class IndexScanPlan implements ExecutionPlan {
 
     private final TableRepository repository;
@@ -12,14 +7,6 @@ public class IndexScanPlan implements ExecutionPlan {
     private final Condition indexedCondition;
     private final Condition remainingCondition;
 
-    /**
-     * Creates an index-backed execution plan.
-     *
-     * @param repository target table repository
-     * @param index B-Tree index to query
-     * @param indexedCondition condition applied against the indexed column
-     * @param remainingCondition optional residual filter evaluated on fetched rows
-     */
     public IndexScanPlan(TableRepository repository, Index index, Condition indexedCondition, Condition remainingCondition) {
         this.repository = Objects.requireNonNull(repository, "repository cannot be null");
         this.index = Objects.requireNonNull(index, "index cannot be null");

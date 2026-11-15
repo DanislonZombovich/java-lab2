@@ -1,5 +1,3 @@
-
-
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -12,32 +10,22 @@ import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.util.List;
 
-/**
- * Graphical User Interface (Swing) for interactive database exploration and query execution.
- */
 public class DatabaseGui extends JFrame {
 
-    /** Query engine used for statement execution. */
     private final QueryEngine engine;
-    /** Database repository backing schema inspection. */
+
     private final DatabaseRepository repository;
 
-    /** SQL editor input component. */
     private JTextArea queryArea;
-    /** Result display table component. */
+
     private JTable resultTable;
-    /** Backing Swing model for result table rows. */
+
     private DefaultTableModel tableModel;
-    /** Status bar displaying execution metrics or errors. */
+
     private JLabel statusLabel;
-    /** Hierarchical database schema tree view. */
+
     private JTree schemaTree;
 
-    /**
-     * Constructs and initializes the DBMS Swing management window.
-     *
-     * @param engine query execution engine used to evaluate SQL statements
-     */
     public DatabaseGui(QueryEngine engine) {
         this.engine = engine;
         this.repository = engine.getDatabaseRepository();

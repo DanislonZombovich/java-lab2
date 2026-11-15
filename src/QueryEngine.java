@@ -1,39 +1,18 @@
-
-
 import java.io.IOException;
 import java.util.*;
 
-/**
- * Core query evaluation engine orchestrating parsing, optimization, transaction safety, and execution.
- */
 public class QueryEngine {
 
     private final DatabaseRepository databaseRepository;
 
-    /**
-     * Creates a QueryEngine backed by the specified database repository.
-     *
-     * @param databaseRepository database repository managing tables and indexes
-     */
     public QueryEngine(DatabaseRepository databaseRepository) {
         this.databaseRepository = Objects.requireNonNull(databaseRepository, "databaseRepository cannot be null");
     }
 
-    /**
-     * Returns the underlying database repository.
-     *
-     * @return database repository instance
-     */
     public DatabaseRepository getDatabaseRepository() {
         return databaseRepository;
     }
 
-    /**
-     * Parses and executes a SQL statement string.
-     *
-     * @param sql SQL statement to execute
-     * @return structured execution result
-     */
     public QueryResult execute(String sql) {
         if (sql == null || sql.trim().isEmpty()) {
             throw new IllegalArgumentException("SQL query cannot be empty");
@@ -43,12 +22,6 @@ public class QueryEngine {
         return execute(stmt);
     }
 
-    /**
-     * Executes a pre-parsed SQL AST statement.
-     *
-     * @param stmt parsed SQL statement
-     * @return structured execution result
-     */
     public QueryResult execute(Statement stmt) {
         long startNs = System.nanoTime();
         try {
@@ -305,13 +278,6 @@ public class QueryEngine {
         return QueryResult.forExplain("Execution plan available primarily for SELECT queries", System.nanoTime() - startNs);
     }
 
-    /**
-     * Selects an index-backed or sequential execution plan for the given condition.
-     *
-     * @param repository target table repository
-     * @param condition optional WHERE condition tree
-     * @return chosen execution plan
-     */
     public ExecutionPlan buildOptimizedPlan(TableRepository repository, Condition condition) {
         if (condition == null) {
             return new SeqScanPlan(repository, null);

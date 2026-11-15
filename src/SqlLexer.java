@@ -1,9 +1,5 @@
-
 import java.util.*;
 
-/**
- * Lexical analyzer converting SQL text into a stream of tokens.
- */
 public class SqlLexer {
 
     private static final Set<String> KEYWORDS = Set.of(
@@ -20,22 +16,12 @@ public class SqlLexer {
     private final int length;
     private int cursor;
 
-    /**
-     * Creates a lexer for the given SQL input string.
-     *
-     * @param source SQL query text
-     */
     public SqlLexer(String source) {
         this.source = source != null ? source : "";
         this.length = this.source.length();
         this.cursor = 0;
     }
 
-    /**
-     * Tokenizes the entire SQL source into a sequence terminated by EOF.
-     *
-     * @return list of parsed tokens
-     */
     public List<Token> tokenize() {
         List<Token> tokens = new ArrayList<>();
         while (cursor < length) {
