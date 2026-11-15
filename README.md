@@ -34,14 +34,15 @@
 
 ## 2. Архитектура системы
 
-Все исходные файлы проекта размещены непосредственно в каталоге `src/` без вложенных пакетов, а модульные тесты собраны в `test/`. Логически классы разделены по слоям и подсистемам:
-- Доменные модели: типы столбцов `DataType`, описание полей `Column`, внешние ключи `ForeignKey`, схема `TableSchema`, строка `Row` и результат `QueryResult`
-- Физическое хранение: интерфейс `StorageEngine`, реализация `FileStorageEngine`, элемент журнала `WalEntry`, итератор `RowIterator`
-- Индексация: интерфейс `Index` и сбалансированное B-дерево `BTreeIndex`
-- Слой доступа к данным: интерфейс `TableRepository`, реализация `FileTableRepository`, фасад базы `DatabaseRepository`
-- Разбор SQL: лексер `SqlLexer`, токены `Token` и `TokenType`, операторы `ComparisonOperator`, дерево условий `Condition`, парсер `SqlParser` и синтаксические узлы команд `Statement`, `CreateTableStatement`, `DropTableStatement`, `CreateIndexStatement`, `DropIndexStatement`, `InsertStatement`, `SelectStatement`, `UpdateStatement`, `DeleteStatement`, `DescribeTableStatement`, `ExplainStatement`, `ShowTablesStatement`, `ShowIndexesStatement`
-- Выполнение запросов: планировщик `QueryEngine`, интерфейс плана `ExecutionPlan` и реализации `SeqScanPlan`, `IndexScanPlan`
-- Интерфейс и замеры: табличный форматтер `TablePrinter`, консольный REPL `ConsoleApp`, окно Swing `DatabaseGui`, нагрузочный модуль `BenchmarkRunner` и точка входа `Main`
+Исходные файлы проекта организованы в стандартную структуру пакетов Maven (`src/main/java/ru/danis/dbms/...`), а модульные тесты собраны в каталоге `src/test/java/ru/danis/dbms/...`. Классы распределены по логическим пакетам:
+- `ru.danis.dbms.model`: доменные модели (типы столбцов `DataType`, описание полей `Column`, внешние ключи `ForeignKey`, схема `TableSchema`, строка `Row`, результат запроса `QueryResult`)
+- `ru.danis.dbms.storage`: физическое хранилище (интерфейс `StorageEngine`, реализация `FileStorageEngine`, элемент журнала `WalEntry`, итератор `RowIterator`)
+- `ru.danis.dbms.repository`: слой доступа к данным (интерфейс `TableRepository`, реализация `FileTableRepository`, фасад базы `DatabaseRepository`)
+- `ru.danis.dbms.index`: подсистема индексации (интерфейс `Index`, B-дерево `BTreeIndex`)
+- `ru.danis.dbms.sql`: разбор и представление SQL (лексер `SqlLexer`, токены `Token` и `TokenType`, операторы `ComparisonOperator`, дерево условий `Condition`, парсер `SqlParser`, интерфейс команд `Statement` и узлы `CreateTableStatement`, `DropTableStatement`, `CreateIndexStatement`, `DropIndexStatement`, `InsertStatement`, `SelectStatement`, `UpdateStatement`, `DeleteStatement`, `DescribeTableStatement`, `ExplainStatement`, `ShowTablesStatement`, `ShowIndexesStatement`)
+- `ru.danis.dbms.engine`: планирование и исполнение запросов (движок `QueryEngine`, интерфейс плана `ExecutionPlan`, планы `SeqScanPlan` и `IndexScanPlan`)
+- `ru.danis.dbms.ui`: пользовательские интерфейсы (форматтер вывода `TablePrinter`, консольный REPL `ConsoleApp`, графическое окно `DatabaseGui`)
+- `ru.danis.dbms`: точка входа `Main` и нагрузочный модуль `BenchmarkRunner`
 
 ### Диаграмма классов
 
@@ -301,61 +302,69 @@ DELETE FROM cars WHERE brand = 'Toyota';
 
 ## 5. Команда и распределение файлов для нового репозитория
 
-Для совместной сдачи подготовлен чистый репозиторий: `https://github.com/DanislonZombovich/simple-db`. В него переносятся все рабочие файлы проекта (2 конфигурационных, 43 исходных Java-файла в `src/` и 7 тестовых классов в `test/`), распределенные между тремя участниками. Настоящий файл `README.md` с отчетом по лабораторной работе остается в основном репозитории `java-lab2`, а в командный репозиторий файлы переносятся без README.
+Для совместной сдачи подготовлен чистый репозиторий: `https://github.com/DanislonZombovich/simple-db`. В него переносятся все рабочие файлы проекта (2 конфигурационных, 43 исходных Java-файла в `src/main/java/` и 7 тестовых классов в `src/test/java/`), распределенные по отдельным пакетам и папкам между тремя участниками команды. Настоящий файл `README.md` с отчетом по лабораторной работе остается в основном репозитории `java-lab2`, а в командный репозиторий файлы переносятся без README.
 
-Порядок фиксации изменений учитывает связи между компонентами: классы хранилища и репозиториев используют `Index`, `BTreeIndex` и `Condition`. Сначала Даниил Егоров фиксирует базовую сборку и слой хранения, затем Егор Глазов добавляет парсер и B-дерево (после чего проект компилируется через `mvn compile`), а Максим Жулин завершает цепочку подключением планировщика, интерфейсов и тестов для успешной проверки `mvn clean package`.
+Порядок фиксации изменений учитывает связи между компонентами: классы хранилища и репозиториев используют `Index`, `BTreeIndex` и `Condition`. Сначала Даниил Егоров фиксирует сборку, доменные модели, файловое хранилище и репозитории (папки `model`, `storage`, `repository`), затем Егор Глазов добавляет подсистему индексов и синтаксический анализ SQL (папки `index`, `sql`), после чего проект компилируется через `mvn compile`. Завершает цепочку Максим Жулин подключением движка запросов, интерфейсов пользователя, точки входа и набора тестов (папки `engine`, `ui`, файлы `Main.java`, `BenchmarkRunner.java` и каталог тестов `src/test/`), после чего успешно проходят проверка `mvn clean test` и сборка `mvn clean package`.
 
 ### Участник 1: Даниил Егоров (закоммичено в simple-db)
 
-Зона ответственности: конфигурация сборки Maven, базовые модели данных и схемы, дисковое сохранение в JSON, атомарная запись через временные файлы, журнал предзаписи `wal.log`, восстановление целостности при старте и репозитории таблиц с контролем внешних ключей.
+Зона ответственности: конфигурация сборки Maven, доменные модели данных и схемы, дисковое сохранение в JSON, атомарная запись через временные файлы, журнал предзаписи `wal.log`, восстановление целостности при старте и репозитории таблиц с контролем внешних ключей.
 
-Список файлов (2 конфигурационных и 12 исходных файлов в `src/`):
+Список файлов и каталогов (2 конфигурационных файла и 13 исходных файлов в 3 пакетах):
 - `.gitignore`
 - `pom.xml`
-- `src/DataType.java`
-- `src/Column.java`
-- `src/ForeignKey.java`
-- `src/TableSchema.java`
-- `src/Row.java`
-- `src/StorageEngine.java`
-- `src/FileStorageEngine.java`
-- `src/WalEntry.java`
-- `src/RowIterator.java`
-- `src/TableRepository.java`
-- `src/FileTableRepository.java`
-- `src/DatabaseRepository.java`
+- `src/main/java/ru/danis/dbms/model/`:
+  - `Column.java`
+  - `DataType.java`
+  - `ForeignKey.java`
+  - `QueryResult.java`
+  - `Row.java`
+  - `TableSchema.java`
+- `src/main/java/ru/danis/dbms/storage/`:
+  - `FileStorageEngine.java`
+  - `RowIterator.java`
+  - `StorageEngine.java`
+  - `WalEntry.java`
+- `src/main/java/ru/danis/dbms/repository/`:
+  - `DatabaseRepository.java`
+  - `FileTableRepository.java`
+  - `TableRepository.java`
 
-Зафиксировано двумя короткими коммитами:
-1. `add storage` (.gitignore, pom.xml, базовые модели и файловое хранилище)
-2. `add repositories` (репозитории таблиц и базы данных)
+Зафиксировано коммитами Даниила Егорова в репозитории `simple-db`:
+```bash
+git add pom.xml .gitignore src/main/java/ru/danis/dbms/model src/main/java/ru/danis/dbms/storage src/main/java/ru/danis/dbms/repository
+git commit -m "update structure"
+git push origin main
+```
 
 ### Участник 2: Егор Глазов
 
-Зона ответственности: B-Tree индекс (вставка, точечный и диапазонный поиск, удаление записей с балансировкой узлов), лексер `SqlLexer`, парсер `SqlParser` с учетом приоритета `AND` над `OR` и вложенных скобок, дерево условий `Condition`, абстрактное синтаксическое дерево SQL-команд и модель результата запроса `QueryResult`.
+Зона ответственности: сбалансированное B-Tree дерево (вставка, точечный и диапазонный поиск, удаление записей с балансировкой узлов), лексер `SqlLexer`, парсер `SqlParser` с учетом приоритета `AND` над `OR` и вложенных скобок, дерево условий `Condition` и синтаксические узлы команд SQL в пакете `ru.danis.dbms.sql`.
 
-Список файлов (22 исходных файла в `src/`):
-- `src/QueryResult.java`
-- `src/Index.java`
-- `src/BTreeIndex.java`
-- `src/TokenType.java`
-- `src/Token.java`
-- `src/SqlLexer.java`
-- `src/ComparisonOperator.java`
-- `src/Condition.java`
-- `src/SqlParser.java`
-- `src/Statement.java`
-- `src/CreateTableStatement.java`
-- `src/DropTableStatement.java`
-- `src/CreateIndexStatement.java`
-- `src/DropIndexStatement.java`
-- `src/InsertStatement.java`
-- `src/SelectStatement.java`
-- `src/UpdateStatement.java`
-- `src/DeleteStatement.java`
-- `src/DescribeTableStatement.java`
-- `src/ExplainStatement.java`
-- `src/ShowTablesStatement.java`
-- `src/ShowIndexesStatement.java`
+Список файлов и каталогов (21 исходный файл в 2 пакетах):
+- `src/main/java/ru/danis/dbms/index/`:
+  - `BTreeIndex.java`
+  - `Index.java`
+- `src/main/java/ru/danis/dbms/sql/`:
+  - `ComparisonOperator.java`
+  - `Condition.java`
+  - `CreateIndexStatement.java`
+  - `CreateTableStatement.java`
+  - `DeleteStatement.java`
+  - `DescribeTableStatement.java`
+  - `DropIndexStatement.java`
+  - `DropTableStatement.java`
+  - `ExplainStatement.java`
+  - `InsertStatement.java`
+  - `SelectStatement.java`
+  - `ShowIndexesStatement.java`
+  - `ShowTablesStatement.java`
+  - `SqlLexer.java`
+  - `SqlParser.java`
+  - `Statement.java`
+  - `Token.java`
+  - `TokenType.java`
+  - `UpdateStatement.java`
 
 Как закоммитить часть Егора:
 
@@ -364,77 +373,55 @@ git clone https://github.com/DanislonZombovich/simple-db.git
 cd simple-db
 git pull origin main
 
-# Скопировать перечисленные 22 файла из каталога src проекта java-lab2 в каталог src, затем проверить компиляцию:
+# Скопировать каталоги index и sql из java-lab2 в src/main/java/ru/danis/dbms/, затем проверить компиляцию:
 mvn compile
 
-git add src/QueryResult.java \
-        src/Index.java \
-        src/BTreeIndex.java \
-        src/TokenType.java \
-        src/Token.java \
-        src/SqlLexer.java \
-        src/ComparisonOperator.java \
-        src/Condition.java \
-        src/SqlParser.java \
-        src/Statement.java \
-        src/CreateTableStatement.java \
-        src/DropTableStatement.java \
-        src/CreateIndexStatement.java \
-        src/DropIndexStatement.java \
-        src/InsertStatement.java \
-        src/SelectStatement.java \
-        src/UpdateStatement.java \
-        src/DeleteStatement.java \
-        src/DescribeTableStatement.java \
-        src/ExplainStatement.java \
-        src/ShowTablesStatement.java \
-        src/ShowIndexesStatement.java
-git commit -m "add index and parser"
+git add src/main/java/ru/danis/dbms/index src/main/java/ru/danis/dbms/sql
+git commit -m "add index and sql"
 git push origin main
 ```
 
 ### Участник 3: Максим Жулин
 
-Зона ответственности: оптимизатор и исполнитель запросов `QueryEngine`, планы выполнения `IndexScanPlan` и `SeqScanPlan`, консольный вывод `TablePrinter`, текстовый интерфейс `ConsoleApp`, графический интерфейс Swing `DatabaseGui`, нагрузочный модуль `BenchmarkRunner`, класс точки входа `Main` и 7 классов тестов JUnit 5.
+Зона ответственности: оптимизатор и исполнитель запросов `QueryEngine`, планы выполнения `IndexScanPlan` и `SeqScanPlan` в пакете `ru.danis.dbms.engine`, консольный и графический интерфейсы пользователя в пакете `ru.danis.dbms.ui`, класс точки входа `Main` и нагрузочный модуль `BenchmarkRunner` в корневом пакете `ru.danis.dbms`, а также полный набор модульных тестов в `src/test/java/ru/danis/dbms/`.
 
-Список файлов (9 исходных файлов в `src/` и 7 тестовых файлов в `test/`):
-- `src/ExecutionPlan.java`
-- `src/SeqScanPlan.java`
-- `src/IndexScanPlan.java`
-- `src/QueryEngine.java`
-- `src/TablePrinter.java`
-- `src/ConsoleApp.java`
-- `src/DatabaseGui.java`
-- `src/BenchmarkRunner.java`
-- `src/Main.java`
-- `test/DataTypeTest.java`
-- `test/BTreeIndexTest.java`
-- `test/SqlParserTest.java`
-- `test/StorageEngineTest.java`
-- `test/ForeignKeyTest.java`
-- `test/QueryEngineTest.java`
-- `test/EdgeCaseAndIntegrityTest.java`
+Список файлов и каталогов (9 исходных файлов и 7 тестовых файлов):
+- `src/main/java/ru/danis/dbms/engine/`:
+  - `ExecutionPlan.java`
+  - `IndexScanPlan.java`
+  - `QueryEngine.java`
+  - `SeqScanPlan.java`
+- `src/main/java/ru/danis/dbms/ui/`:
+  - `ConsoleApp.java`
+  - `DatabaseGui.java`
+  - `TablePrinter.java`
+- `src/main/java/ru/danis/dbms/`:
+  - `BenchmarkRunner.java`
+  - `Main.java`
+- `src/test/java/ru/danis/dbms/`:
+  - `BTreeIndexTest.java`
+  - `DataTypeTest.java`
+  - `EdgeCaseAndIntegrityTest.java`
+  - `ForeignKeyTest.java`
+  - `QueryEngineTest.java`
+  - `SqlParserTest.java`
+  - `StorageEngineTest.java`
 
-Как закоммитить часть Максима (после того как Егор отправит свои файлы):
+Как закоммитить часть Максима (после того как Егор отправит свои папки):
 
 ```bash
 git clone https://github.com/DanislonZombovich/simple-db.git
 cd simple-db
 git pull origin main
 
-# Скопировать 9 файлов в src и 7 тестовых файлов в test из java-lab2, затем проверить тесты:
+# Скопировать каталоги engine, ui, файлы Main.java, BenchmarkRunner.java и каталог src/test из java-lab2, затем проверить тесты:
 mvn clean test
 
-git add src/ExecutionPlan.java \
-        src/SeqScanPlan.java \
-        src/IndexScanPlan.java \
-        src/QueryEngine.java \
-        src/TablePrinter.java \
-        src/ConsoleApp.java \
-        src/DatabaseGui.java \
-        src/BenchmarkRunner.java \
-        src/Main.java \
-        test/
+git add src/main/java/ru/danis/dbms/engine \
+        src/main/java/ru/danis/dbms/ui \
+        src/main/java/ru/danis/dbms/Main.java \
+        src/main/java/ru/danis/dbms/BenchmarkRunner.java \
+        src/test
 git commit -m "add engine and tests"
 git push origin main
 ```
