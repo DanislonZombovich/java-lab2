@@ -122,5 +122,17 @@ public class SqlParserTest {
         SqlParser p2 = new SqlParser(explainSql);
         ExplainStatement exp = (ExplainStatement) p2.parse();
         assertInstanceOf(SelectStatement.class, exp.getInnerStatement());
+
+        String dropIdxSql = "DROP INDEX idx_cars_brand;";
+        SqlParser p3 = new SqlParser(dropIdxSql);
+        DropIndexStatement didx1 = (DropIndexStatement) p3.parse();
+        assertEquals("idx_cars_brand", didx1.getIndexName());
+        assertFalse(didx1.isIfExists());
+
+        String dropIdxOnSql = "DROP INDEX IF EXISTS idx_cars_brand ON cars;";
+        SqlParser p4 = new SqlParser(dropIdxOnSql);
+        DropIndexStatement didx2 = (DropIndexStatement) p4.parse();
+        assertEquals("idx_cars_brand", didx2.getIndexName());
+        assertTrue(didx2.isIfExists());
     }
 }

@@ -80,6 +80,9 @@ public class SqlParser {
                 ifExists = true;
             }
             String indexName = consumeIdentifierOrKeyword();
+            if (matchKeyword("ON")) {
+                consumeIdentifierOrKeyword();
+            }
             return new DropIndexStatement(indexName, ifExists);
         }
         throw new IllegalArgumentException("Expected TABLE or INDEX after DROP, found: " + peek().getValue());

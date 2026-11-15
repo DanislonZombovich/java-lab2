@@ -112,7 +112,6 @@ public class ConsoleApp {
     private void printBanner() {
         out.println("====================================================================");
         out.println("                   Simple Relational DBMS (Java)                    ");
-        out.println("  Features: B-Tree Indexes, Disk Persistence, SQL Parser, Foreign Keys");
         out.println("====================================================================");
         out.println("End SQL statements with ';'. Type 'help' for instructions,");
         out.println("'init-demo' to populate sample tables, or 'exit' to terminate.\n");

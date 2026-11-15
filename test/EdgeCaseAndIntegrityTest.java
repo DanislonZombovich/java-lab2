@@ -537,7 +537,7 @@ public class EdgeCaseAndIntegrityTest {
         engine.execute("INSERT INTO cars VALUES (1, 'Toyota'), (2, 'BMW');");
         engine.execute("CREATE INDEX idx_brand_1 ON cars (brand);");
         engine.execute("CREATE INDEX idx_brand_2 ON cars (brand);");
-        engine.execute("DROP INDEX idx_brand_2;");
+        engine.execute("DROP INDEX idx_brand_2 ON cars;");
 
         QueryResult explain = engine.execute("EXPLAIN SELECT * FROM cars WHERE brand = 'Toyota';");
         String plan = explain.getRows().get(0).get("PLAN").toString();
